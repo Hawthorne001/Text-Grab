@@ -12,7 +12,7 @@ namespace Text_Grab.Properties {
     
     
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]
-    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "17.10.0.0")]
+    [global::System.CodeDom.Compiler.GeneratedCodeAttribute("Microsoft.VisualStudio.Editors.SettingsDesigner.SettingsSingleFileGenerator", "17.12.0.0")]
     internal sealed partial class Settings : global::System.Configuration.ApplicationSettingsBase {
         
         private static Settings defaultInstance = ((Settings)(global::System.Configuration.ApplicationSettingsBase.Synchronized(new Settings())));
@@ -548,6 +548,66 @@ namespace Text_Grab.Properties {
             }
             set {
                 this["EtwUseMargins"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool CloseFrameOnGrab {
+            get {
+                return ((bool)(this["CloseFrameOnGrab"]));
+            }
+            set {
+                this["CloseFrameOnGrab"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("Resize")]
+        public string GrabFrameScrollBehavior {
+            get {
+                return ((string)(this["GrabFrameScrollBehavior"]));
+            }
+            set {
+                this["GrabFrameScrollBehavior"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool LookupSearchHistory {
+            get {
+                return ((bool)(this["LookupSearchHistory"]));
+            }
+            set {
+                this["LookupSearchHistory"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string DefaultWebSearch {
+            get {
+                return ((string)(this["DefaultWebSearch"]));
+            }
+            set {
+                this["DefaultWebSearch"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string WebSearchItemsJson {
+            get {
+                return ((string)(this["WebSearchItemsJson"]));
+            }
+            set {
+                this["WebSearchItemsJson"] = value;
             }
         }
     }

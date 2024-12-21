@@ -199,6 +199,14 @@ public class ButtonInfo
         },
         new()
         {
+            OrderNumber = 1.7,
+            ButtonText = "Web Search",
+            SymbolText = "",
+            Command = "DefaultWebSearchCmd",
+            SymbolIcon = SymbolRegular.GlobeSearch24
+        },
+        new()
+        {
             OrderNumber = 2.1,
             ButtonText = "Open Settings",
             SymbolText = "",
