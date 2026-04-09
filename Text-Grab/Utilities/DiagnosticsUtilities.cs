@@ -161,6 +161,7 @@ public static class DiagnosticsUtilities
             // OCR / error correction
             CorrectErrors = s.CorrectErrors,
             CorrectToLatin = s.CorrectToLatin,
+            ParagraphDetection = s.ParagraphDetection,
             TryToReadBarcodes = s.TryToReadBarcodes,
             UseTesseract = s.UseTesseract,
             TesseractPathConfigured = !string.IsNullOrWhiteSpace(s.TesseractPath),
@@ -508,6 +509,7 @@ public class SettingsInfoModel
     // OCR / error correction
     public bool CorrectErrors { get; set; }
     public bool CorrectToLatin { get; set; }
+    public bool ParagraphDetection { get; set; }
     public bool TryToReadBarcodes { get; set; }
     public bool UseTesseract { get; set; }
     public bool TesseractPathConfigured { get; set; }  // true/false only — full path is PII
