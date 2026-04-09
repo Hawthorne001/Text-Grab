@@ -369,6 +369,13 @@ public static partial class OcrUtilities
 
     public static async Task<List<OcrOutput>> GetTextFromWinAiAsync(Bitmap bitmap, WindowsAiLang language)
     {
+        if (DefaultSettings.ParagraphDetection && language.IsSpaceJoining())
+        {
+            WinAiOcrLinesWords? ocrResult = await WindowsAiUtilities.GetOcrResultAsync(bitmap);
+            if (ocrResult is not null)
+                return [GetTextFromOcrResult(language, bitmap, ocrResult)];
+        }
+
         // get temp path
         string tempPath = Path.GetTempPath();
         string tempFileName = Path.GetRandomFileName() + ".bmp";
@@ -428,24 +435,90 @@ public static partial class OcrUtilities
 
     private static OcrOutput GetTextFromOcrResult(ILanguage language, Bitmap? scaledBitmap, IOcrLinesWords ocrResult)
     {
-        StringBuilder text = new();
-
-        bool isSpaceJoiningOCRLang = language.IsSpaceJoining();
-
-        foreach (IOcrLine ocrLine in ocrResult.Lines)
-            ocrLine.GetTextFromOcrLine(isSpaceJoiningOCRLang, text);
-
-        if (language.IsRightToLeft())
-            text.ReverseWordsForRightToLeft();
-
         OcrOutput paragraphsOutput = new()
         {
             Kind = OcrOutputKind.Paragraph,
-            RawOutput = text.ToString(),
+            RawOutput = BuildTextFromOcrLines(language, ocrResult),
             Language = language,
             SourceBitmap = scaledBitmap,
         };
         return paragraphsOutput;
+    }
+
+    internal static string BuildTextFromOcrLines(ILanguage language, IOcrLinesWords ocrResult)
+    {
+        StringBuilder text = new();
+
+        bool isSpaceJoiningOCRLang = language.IsSpaceJoining();
+        IOcrLine[] lines = ocrResult.Lines;
+
+        if (DefaultSettings.ParagraphDetection && isSpaceJoiningOCRLang && lines.Length > 0)
+        {
+            text.Append(lines[0].Text);
+            for (int i = 1; i < lines.Length; i++)
+            {
+                if (IsWrappedLine(lines[i - 1], lines[i]))
+                    text.Append(' ');
+                else
+                    text.AppendLine();
+                text.Append(lines[i].Text);
+            }
+        }
+        else
+        {
+            foreach (IOcrLine ocrLine in lines)
+                ocrLine.GetTextFromOcrLine(isSpaceJoiningOCRLang, text);
+        }
+
+        if (language.IsRightToLeft())
+            text.ReverseWordsForRightToLeft();
+
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// Determines whether two consecutive lines belong to the same wrapped paragraph
+    /// by comparing the vertical gap between them relative to the average line height.
+    /// Returns true if the lines should be joined with a space (same paragraph, wrapped),
+    /// false if they should be separated by a newline (different paragraphs).
+    /// </summary>
+    internal static bool IsWrappedLine(IOcrLine currentLine, IOcrLine nextLine)
+    {
+        if (currentLine.BoundingBox.IsEmpty || nextLine.BoundingBox.IsEmpty)
+            return false;
+
+        return IsWrappedParagraph(
+            currentLine.BoundingBox.Y,
+            currentLine.BoundingBox.Height,
+            nextLine.BoundingBox.Y,
+            nextLine.BoundingBox.Height);
+    }
+
+    /// <summary>
+    /// Core paragraph-wrap heuristic: returns true when the vertical gap between two
+    /// lines is small enough (less than 60 % of the average line height) that they
+    /// belong to the same wrapped paragraph, and their heights are similar (ratio ≤ 1.5).
+    /// Works for any coordinate space — ratios are scale-invariant.
+    /// </summary>
+    internal static bool IsWrappedParagraph(
+        double currentTop, double currentHeight,
+        double nextTop, double nextHeight)
+    {
+        if (currentHeight <= 0 || nextHeight <= 0)
+            return false;
+
+        // Lines with significantly different heights are likely different content blocks
+        double minHeight = Math.Min(currentHeight, nextHeight);
+        double maxHeight = Math.Max(currentHeight, nextHeight);
+        if (maxHeight / minHeight > 1.5)
+            return false;
+
+        // If the vertical gap between line bounding boxes is less than 0.6× the average line
+        // height, the lines are part of the same paragraph (normal line spacing); otherwise
+        // the extra whitespace signals a paragraph break.
+        double gap = nextTop - (currentTop + currentHeight);
+        double avgLineHeight = (currentHeight + nextHeight) / 2.0;
+        return gap < avgLineHeight * 0.6;
     }
 
     public static string GetStringFromOcrOutputs(List<OcrOutput> outputs)
