@@ -3469,7 +3469,7 @@ new GrabFrameOperationArgs()
             if (selectedWbs.Length > 0)
                 stringBuilder.AppendJoin(Environment.NewLine, selectedWbs);
             else
-                stringBuilder.AppendJoin(Environment.NewLine, [.. wordBorders.Select(w => w.Word)]);
+                AppendWordBordersWithParagraphDetection(stringBuilder);
         }
 
         FrameText = stringBuilder.ToString();
@@ -3484,6 +3484,27 @@ new GrabFrameOperationArgs()
         }
 
         UpdateTemplateRegionOverlay();
+    }
+
+    private void AppendWordBordersWithParagraphDetection(StringBuilder sb)
+    {
+        List<WordBorder> sorted = [.. wordBorders.OrderBy(w => w.Top).ThenBy(w => w.Left)];
+        if (sorted.Count == 0)
+            return;
+
+        sb.Append(sorted[0].Word);
+        for (int i = 1; i < sorted.Count; i++)
+        {
+            WordBorder prev = sorted[i - 1];
+            WordBorder curr = sorted[i];
+            if (DefaultSettings.ParagraphDetection
+                && isSpaceJoining
+                && OcrUtilities.IsWrappedParagraph(prev.Top, prev.Height, curr.Top, curr.Height))
+                sb.Append(' ');
+            else
+                sb.AppendLine();
+            sb.Append(curr.Word);
+        }
     }
 
     private void Window_Closed(object? sender, EventArgs e)
