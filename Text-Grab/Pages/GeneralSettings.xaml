@@ -302,7 +302,17 @@
             Style="{StaticResource TextHeader}"
             Text="Correct Common Errors" />
         <ui:ToggleSwitch
+            Name="ParagraphDetectionToggle"
+            Checked="ParagraphDetectionToggle_Checked"
+            Unchecked="ParagraphDetectionToggle_Unchecked">
+            <TextBlock Style="{StaticResource TextBodyNormal}">
+                Detect paragraph wrapping — join wrapped lines into one paragraph
+            </TextBlock>
+        </ui:ToggleSwitch>
+
+        <ui:ToggleSwitch
             Name="ErrorCorrectBox"
+            Margin="0,16,0,0"
             Checked="ErrorCorrectBox_Checked"
             Unchecked="ErrorCorrectBox_Unchecked">
             <TextBlock Style="{StaticResource TextBodyNormal}">
