@@ -18,7 +18,10 @@
       "Bash(curl -o bin/pdm https://app.produckmap.com/cli/pdm)",
       "Bash(chmod +x bin/pdm)",
       "Bash(bin/pdm ui-element:*)",
-      "Bash(bin/pdm *)"
+      "Bash(bin/pdm *)",
+      "Bash(pdm *)",
+      "Bash(pdm api *)",
+      "Read(//c/Users/josep/.claude/skills/pdm/**)"
     ],
     "deny": []
   }
