@@ -94,4 +94,17 @@ public class FilesIoTests
         Bitmap? emptyReturn = await FileUtilities.GetImageFileAsync(fileName, storageKind);
         Assert.Null(emptyReturn);
     }
+
+    [Theory]
+    [InlineData(@"C:\Temp\sheet.csv", EtwEditorMode.Spreadsheet)]
+    [InlineData(@"C:\Temp\sheet.TSV", EtwEditorMode.Spreadsheet)]
+    [InlineData(@"C:\Temp\sheet.tab", EtwEditorMode.Spreadsheet)]
+    [InlineData(@"C:\Temp\notes.md", EtwEditorMode.Markdown)]
+    [InlineData(@"C:\Temp\notes.markdown", EtwEditorMode.Markdown)]
+    [InlineData(@"C:\Temp\notes.txt", EtwEditorMode.Text)]
+    [InlineData(@"C:\Temp\data.json", EtwEditorMode.Text)]
+    public void GetEditorModeForPath_UsesFileExtension(string path, EtwEditorMode expectedMode)
+    {
+        Assert.Equal(expectedMode, IoUtilities.GetEditorModeForPath(path));
+    }
 }
