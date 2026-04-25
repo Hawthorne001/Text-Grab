@@ -119,17 +119,7 @@ public static partial class StringMethods
         if (string.IsNullOrEmpty(input))
             return (0, 0);
 
-        if (cursorPosition < 0)
-            cursorPosition = 0;
-
-        try
-        {
-            char check = input[cursorPosition];
-        }
-        catch (IndexOutOfRangeException)
-        {
-            return (cursorPosition, 0);
-        }
+        cursorPosition = Math.Clamp(cursorPosition, 0, input.Length - 1);
 
         // Check if the cursor is at a space
         if (char.IsWhiteSpace(input[cursorPosition]))
@@ -165,7 +155,7 @@ public static partial class StringMethods
 
     private static int FindNearestLetterIndex(string input, int cursorPosition)
     {
-        Math.Clamp(cursorPosition, 0, input.Length - 1);
+        cursorPosition = Math.Clamp(cursorPosition, 0, input.Length - 1);
 
         int lastCharIndex = input.Length - 1;
 
@@ -182,6 +172,12 @@ public static partial class StringMethods
         if (nearestToTheLeft < 0
             && nearestToTheRight > lastCharIndex)
             return cursorPosition;
+
+        if (nearestToTheLeft < 0)
+            return nearestToTheRight;
+
+        if (nearestToTheRight > lastCharIndex)
+            return nearestToTheLeft;
 
         int leftDistance = cursorPosition - nearestToTheLeft;
         int rightDistance = nearestToTheRight - cursorPosition;

@@ -99,6 +99,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private readonly SpreadsheetUndoHistory spreadsheetUndoHistory = new();
     private readonly DataTable spreadsheetTable = new();
     private readonly List<DataGridColumn> trackedSpreadsheetColumns = [];
+    private List<(int RowIndex, int ColumnIndex)> selectedSpreadsheetCellCoordinates = [];
     private EtwEditorMode editorMode = EtwEditorMode.Text;
     private bool isSyncingTextFromSpreadsheet = false;
     private bool isSyncingTextFromMarkdown = false;
@@ -598,18 +599,13 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void CopySpreadsheetSelectionMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        if (SpreadsheetDataGrid.SelectedCells.Count == 0)
+        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = GetSelectedSpreadsheetCellCoordinates();
+        if (selectedCellCoordinates.Count == 0)
             return;
 
-        string selectionText = string.Join(
-            Environment.NewLine,
-            SpreadsheetDataGrid.SelectedCells
-                .GroupBy(cell => SpreadsheetDataGrid.Items.IndexOf(cell.Item))
-                .OrderBy(group => group.Key)
-                .Select(group => string.Join(
-                    "\t",
-                    group.OrderBy(cell => cell.Column.DisplayIndex)
-                        .Select(cell => ((cell.Item as DataRowView)?.Row[cell.Column.DisplayIndex] ?? string.Empty).ToString()))));
+        string selectionText = BuildSpreadsheetSelectionText(spreadsheetTable, selectedCellCoordinates);
+        if (string.IsNullOrEmpty(selectionText))
+            return;
 
         TrySetClipboardText(selectionText);
     }
@@ -724,6 +720,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         SpreadsheetDataGrid.SelectedCells.Clear();
         SpreadsheetDataGrid.CurrentCell = new DataGridCellInfo(rowItem, column);
         SpreadsheetDataGrid.SelectedCells.Add(new DataGridCellInfo(rowItem, column));
+        UpdateSelectedSpreadsheetCellCoordinates();
         SpreadsheetDataGrid.Focus();
 
         if (beginEdit)
@@ -818,6 +815,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         spreadsheetTable.EndInit();
 
         SpreadsheetDataGrid.ItemsSource = spreadsheetTable.DefaultView;
+        selectedSpreadsheetCellCoordinates = [];
         SpreadsheetDataGrid.Columns.Clear();
 
         for (int columnIndex = 0; columnIndex < spreadsheetTable.Columns.Count; columnIndex++)
@@ -1186,18 +1184,15 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void SpreadsheetDataGrid_SelectedCellsChanged(object sender, SelectedCellsChangedEventArgs e)
     {
+        UpdateSelectedSpreadsheetCellCoordinates();
+
         if (editorMode == EtwEditorMode.Spreadsheet)
             UpdateLineAndColumnText();
     }
 
     private void ClearSelectedSpreadsheetCellValues()
     {
-        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = [.. SpreadsheetDataGrid.SelectedCells
-            .Select(cell => (
-                RowIndex: SpreadsheetDataGrid.Items.IndexOf(cell.Item),
-                ColumnIndex: cell.Column?.DisplayIndex ?? -1))
-            .Where(cell => cell.RowIndex >= 0 && cell.ColumnIndex >= 0)
-            .Distinct()];
+        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = GetSelectedSpreadsheetCellCoordinates();
 
         if (selectedCellCoordinates.Count == 0)
             return;
@@ -1228,6 +1223,216 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
             dataTable.Rows[rowIndex][columnIndex] = string.Empty;
         }
+    }
+
+    internal static string BuildSpreadsheetSelectionText(
+        DataTable dataTable,
+        IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates)
+    {
+        ArgumentNullException.ThrowIfNull(dataTable);
+        ArgumentNullException.ThrowIfNull(cellCoordinates);
+
+        List<(int RowIndex, int ColumnIndex)> validCoordinates = [.. cellCoordinates
+            .Distinct()
+            .Where(cell => cell.RowIndex >= 0
+                && cell.RowIndex < dataTable.Rows.Count
+                && cell.ColumnIndex >= 0
+                && cell.ColumnIndex < dataTable.Columns.Count)];
+
+        if (validCoordinates.Count == 0)
+            return string.Empty;
+
+        return string.Join(
+            Environment.NewLine,
+            validCoordinates
+                .GroupBy(cell => cell.RowIndex)
+                .OrderBy(group => group.Key)
+                .Select(group => string.Join(
+                    "\t",
+                    group.OrderBy(cell => cell.ColumnIndex)
+                        .Select(cell => dataTable.Rows[cell.RowIndex][cell.ColumnIndex]?.ToString() ?? string.Empty))));
+    }
+
+    internal static List<(int RowIndex, int ColumnIndex)> GetSelectedOrPopulatedSpreadsheetCellCoordinates(
+        DataTable dataTable,
+        IEnumerable<(int RowIndex, int ColumnIndex)> selectedCellCoordinates)
+    {
+        ArgumentNullException.ThrowIfNull(dataTable);
+        ArgumentNullException.ThrowIfNull(selectedCellCoordinates);
+
+        List<(int RowIndex, int ColumnIndex)> validSelectedCoordinates = [.. selectedCellCoordinates
+            .Distinct()
+            .Where(cell => cell.RowIndex >= 0
+                && cell.RowIndex < dataTable.Rows.Count
+                && cell.ColumnIndex >= 0
+                && cell.ColumnIndex < dataTable.Columns.Count)];
+
+        if (validSelectedCoordinates.Count > 0)
+            return validSelectedCoordinates;
+
+        List<(int RowIndex, int ColumnIndex)> populatedCoordinates = [];
+
+        for (int rowIndex = 0; rowIndex < dataTable.Rows.Count; rowIndex++)
+        {
+            for (int columnIndex = 0; columnIndex < dataTable.Columns.Count; columnIndex++)
+            {
+                string cellValue = dataTable.Rows[rowIndex][columnIndex]?.ToString() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(cellValue))
+                    populatedCoordinates.Add((rowIndex, columnIndex));
+            }
+        }
+
+        return populatedCoordinates;
+    }
+
+    internal static void TransformSpreadsheetDocumentCellValues(
+        EditTextTableDocument document,
+        IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates,
+        Func<string, string> transform)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(cellCoordinates);
+        ArgumentNullException.ThrowIfNull(transform);
+
+        document.EnsureMinimumSize();
+
+        foreach ((int rowIndex, int columnIndex) in cellCoordinates.Distinct())
+        {
+            if (rowIndex < 0
+                || rowIndex >= document.Rows.Count
+                || columnIndex < 0
+                || document.Rows[rowIndex] is null
+                || columnIndex >= document.Rows[rowIndex].Count)
+            {
+                continue;
+            }
+
+            string updatedValue = transform(document.Rows[rowIndex][columnIndex] ?? string.Empty);
+            ArgumentNullException.ThrowIfNull(updatedValue);
+            document.Rows[rowIndex][columnIndex] = updatedValue;
+        }
+    }
+
+    internal static void SetSpreadsheetDocumentCellValues(
+        EditTextTableDocument document,
+        IEnumerable<(int RowIndex, int ColumnIndex, string Value)> cellValues)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(cellValues);
+
+        document.EnsureMinimumSize();
+
+        foreach ((int rowIndex, int columnIndex, string value) in cellValues.Distinct())
+        {
+            if (rowIndex < 0
+                || rowIndex >= document.Rows.Count
+                || columnIndex < 0
+                || document.Rows[rowIndex] is null
+                || columnIndex >= document.Rows[rowIndex].Count)
+            {
+                continue;
+            }
+
+            document.Rows[rowIndex][columnIndex] = value ?? string.Empty;
+        }
+    }
+
+    private void UpdateSelectedSpreadsheetCellCoordinates()
+    {
+        selectedSpreadsheetCellCoordinates = [.. SpreadsheetDataGrid.SelectedCells
+            .Select(cell => (
+                RowIndex: SpreadsheetDataGrid.Items.IndexOf(cell.Item),
+                ColumnIndex: cell.Column?.DisplayIndex ?? -1))
+            .Where(cell => cell.RowIndex >= 0 && cell.ColumnIndex >= 0)
+            .Distinct()];
+    }
+
+    private List<(int RowIndex, int ColumnIndex)> GetSelectedSpreadsheetCellCoordinates()
+    {
+        return [.. selectedSpreadsheetCellCoordinates];
+    }
+
+    private List<(int RowIndex, int ColumnIndex)> GetSelectedOrPopulatedSpreadsheetCellCoordinates()
+    {
+        return GetSelectedOrPopulatedSpreadsheetCellCoordinates(spreadsheetTable, GetSelectedSpreadsheetCellCoordinates());
+    }
+
+    private IEnumerable<string> GetSelectedOrPopulatedSpreadsheetCellTexts()
+    {
+        foreach ((int rowIndex, int columnIndex) in GetSelectedOrPopulatedSpreadsheetCellCoordinates())
+            yield return spreadsheetTable.Rows[rowIndex][columnIndex]?.ToString() ?? string.Empty;
+    }
+
+    private bool TryApplySpreadsheetTextTransform(Func<string, string> transform)
+    {
+        ArgumentNullException.ThrowIfNull(transform);
+
+        if (editorMode != EtwEditorMode.Spreadsheet)
+            return false;
+
+        CommitSpreadsheetEditsAndCapturePendingHistory();
+        EnsureSpreadsheetDocumentFromText();
+
+        if (tableDocument is null)
+            return true;
+
+        List<(int RowIndex, int ColumnIndex)> targetCells = GetSelectedOrPopulatedSpreadsheetCellCoordinates();
+        if (targetCells.Count == 0)
+            return true;
+
+        int focusRow = Math.Max(0, SpreadsheetDataGrid.Items.IndexOf(SpreadsheetDataGrid.CurrentItem));
+        int focusColumn = Math.Max(0, SpreadsheetDataGrid.CurrentCell.Column?.DisplayIndex ?? 0);
+
+        ApplySpreadsheetDocumentChange(
+            document => TransformSpreadsheetDocumentCellValues(document, targetCells, transform),
+            focusRow,
+            focusColumn);
+        UpdateLineAndColumnText();
+        return true;
+    }
+
+    private async Task<bool> TryApplySpreadsheetTextTransformAsync(Func<string, Task<string>> transformAsync)
+    {
+        ArgumentNullException.ThrowIfNull(transformAsync);
+
+        if (editorMode != EtwEditorMode.Spreadsheet)
+            return false;
+
+        CommitSpreadsheetEditsAndCapturePendingHistory();
+        EnsureSpreadsheetDocumentFromText();
+
+        if (tableDocument is null)
+            return true;
+
+        List<(int RowIndex, int ColumnIndex)> targetCells = GetSelectedOrPopulatedSpreadsheetCellCoordinates();
+        if (targetCells.Count == 0)
+            return true;
+
+        int focusRow = Math.Max(0, SpreadsheetDataGrid.Items.IndexOf(SpreadsheetDataGrid.CurrentItem));
+        int focusColumn = Math.Max(0, SpreadsheetDataGrid.CurrentCell.Column?.DisplayIndex ?? 0);
+        List<(int RowIndex, int ColumnIndex, string Value)> transformedCells = [];
+
+        foreach ((int rowIndex, int columnIndex) in targetCells)
+        {
+            if (rowIndex < 0
+                || rowIndex >= tableDocument.Rows.Count
+                || columnIndex < 0
+                || columnIndex >= tableDocument.Rows[rowIndex].Count)
+            {
+                continue;
+            }
+
+            string updatedValue = await transformAsync(tableDocument.Rows[rowIndex][columnIndex] ?? string.Empty);
+            ArgumentNullException.ThrowIfNull(updatedValue);
+            transformedCells.Add((rowIndex, columnIndex, updatedValue));
+        }
+
+        ApplySpreadsheetDocumentChange(
+            document => SetSpreadsheetDocumentCellValues(document, transformedCells),
+            focusRow,
+            focusColumn);
+        UpdateLineAndColumnText();
+        return true;
     }
 
     private void SpreadsheetUndoCanExecute(object sender, CanExecuteRoutedEventArgs e)
@@ -1503,6 +1708,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             SpreadsheetDataGrid.ScrollIntoView(firstRowItem, column);
         }
 
+        UpdateSelectedSpreadsheetCellCoordinates();
         SpreadsheetDataGrid.Focus();
         UpdateLineAndColumnText();
     }
@@ -1521,6 +1727,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
         SpreadsheetDataGrid.CurrentCell = new DataGridCellInfo(rowItem, firstColumn);
         SpreadsheetDataGrid.ScrollIntoView(rowItem, firstColumn);
+        UpdateSelectedSpreadsheetCellCoordinates();
         SpreadsheetDataGrid.Focus();
         UpdateLineAndColumnText();
     }
@@ -2151,6 +2358,46 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         else
             textToModify = PassedTextControl.SelectedText;
         return textToModify;
+    }
+
+    private IEnumerable<string> GetSelectedOrAllTextSegmentsForEdit()
+    {
+        if (editorMode == EtwEditorMode.Spreadsheet)
+            return GetSelectedOrPopulatedSpreadsheetCellTexts();
+
+        return [GetSelectedTextOrAllText()];
+    }
+
+    private void ReplaceSelectedTextOrAllText(string updatedText)
+    {
+        ArgumentNullException.ThrowIfNull(updatedText);
+
+        if (PassedTextControl.SelectionLength == 0)
+            PassedTextControl.Text = updatedText;
+        else
+            PassedTextControl.SelectedText = updatedText;
+    }
+
+    private void ApplySelectedTextOrAllTextTransform(Func<string, string> transform)
+    {
+        ArgumentNullException.ThrowIfNull(transform);
+
+        if (TryApplySpreadsheetTextTransform(transform))
+            return;
+
+        string updatedText = transform(GetSelectedTextOrAllText());
+        ReplaceSelectedTextOrAllText(updatedText);
+    }
+
+    private async Task ApplySelectedTextOrAllTextTransformAsync(Func<string, Task<string>> transformAsync)
+    {
+        ArgumentNullException.ThrowIfNull(transformAsync);
+
+        if (await TryApplySpreadsheetTextTransformAsync(transformAsync))
+            return;
+
+        string updatedText = await transformAsync(GetSelectedTextOrAllText());
+        ReplaceSelectedTextOrAllText(updatedText);
     }
 
     private void GrabFrameMenuItem_Click(object sender, RoutedEventArgs e)
@@ -3289,37 +3536,13 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ReplaceReservedCharsCmdCanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
-        bool containsAnyReservedChars = false;
-
-        if (PassedTextControl.SelectionLength > 0)
-        {
-            foreach (char reservedChar in StringMethods.ReservedChars)
-            {
-                if (PassedTextControl.SelectedText.Contains(reservedChar))
-                    containsAnyReservedChars = true;
-            }
-        }
-        else
-        {
-            foreach (char reservedChar in StringMethods.ReservedChars)
-            {
-                if (PassedTextControl.Text.Contains(reservedChar))
-                    containsAnyReservedChars = true;
-            }
-        }
-
-        if (containsAnyReservedChars)
-            e.CanExecute = true;
-        else
-            e.CanExecute = false;
+        e.CanExecute = GetSelectedOrAllTextSegmentsForEdit()
+            .Any(text => StringMethods.ReservedChars.Any(text.Contains));
     }
 
     private void ReplaceReservedCharsCmdExecuted(object sender, ExecutedRoutedEventArgs e)
     {
-        if (PassedTextControl.SelectionLength > 0)
-            PassedTextControl.SelectedText = PassedTextControl.SelectedText.ReplaceReservedCharacters();
-        else
-            PassedTextControl.Text = PassedTextControl.Text.ReplaceReservedCharacters();
+        ApplySelectedTextOrAllTextTransform(text => text.ReplaceReservedCharacters());
     }
 
     private void RestorePositionMenuItem_Checked(object sender, RoutedEventArgs e)
@@ -3591,9 +3814,67 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void SelectWord(object? sender = null, ExecutedRoutedEventArgs? e = null)
     {
+        if (TrySelectSpreadsheetWord())
+            return;
+
         (int wordStart, int wordLength) = PassedTextControl.Text.CursorWordBoundaries(PassedTextControl.CaretIndex);
 
         PassedTextControl.Select(wordStart, wordLength);
+    }
+
+    private bool TrySelectSpreadsheetWord()
+    {
+        if (editorMode != EtwEditorMode.Spreadsheet)
+            return false;
+
+        if (TryGetFocusedSpreadsheetCellEditor(out System.Windows.Controls.TextBox? focusedEditor))
+        {
+            (int editorWordStart, int editorWordLength) = focusedEditor.Text.CursorWordBoundaries(focusedEditor.CaretIndex);
+            focusedEditor.Select(editorWordStart, editorWordLength);
+            return true;
+        }
+
+        int rowIndex = SpreadsheetDataGrid.Items.IndexOf(SpreadsheetDataGrid.CurrentItem);
+        int? columnIndex = SpreadsheetDataGrid.CurrentCell.Column?.DisplayIndex;
+        if (rowIndex < 0
+            || columnIndex is null
+            || rowIndex >= spreadsheetTable.Rows.Count
+            || columnIndex.Value < 0
+            || columnIndex.Value >= spreadsheetTable.Columns.Count)
+        {
+            return true;
+        }
+
+        string cellText = spreadsheetTable.Rows[rowIndex][columnIndex.Value]?.ToString() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(cellText))
+            return true;
+
+        (int wordStart, int wordLength) = cellText.CursorWordBoundaries(0);
+        FocusSpreadsheetCell(rowIndex, columnIndex.Value);
+
+        Dispatcher.BeginInvoke(
+            () =>
+            {
+                if (TryGetFocusedSpreadsheetCellEditor(out System.Windows.Controls.TextBox? editor))
+                    editor.Select(wordStart, wordLength);
+            },
+            DispatcherPriority.Background);
+
+        return true;
+    }
+
+    private bool TryGetFocusedSpreadsheetCellEditor([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out System.Windows.Controls.TextBox? editor)
+    {
+        editor = null;
+
+        if (Keyboard.FocusedElement is not DependencyObject focusedElement)
+            return false;
+
+        if (FindVisualParent<System.Windows.Controls.DataGridCell>(focusedElement) is null)
+            return false;
+
+        editor = FindVisualParent<System.Windows.Controls.TextBox>(focusedElement);
+        return editor is not null;
     }
 
     private void SelectWordMenuItem_Click(object sender, RoutedEventArgs e)
@@ -3761,25 +4042,15 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void SingleLineCmdCanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
-        string textToOperateOn = GetSelectedTextOrAllText();
-
-        if (textToOperateOn.Contains(Environment.NewLine)
-            || textToOperateOn.Contains('\r')
-            || textToOperateOn.Contains('\n'))
-        {
-            e.CanExecute = true;
-            return;
-        }
-
-        e.CanExecute = false;
+        e.CanExecute = GetSelectedOrAllTextSegmentsForEdit()
+            .Any(text => text.Contains(Environment.NewLine)
+                || text.Contains('\r')
+                || text.Contains('\n'));
     }
 
     private void SingleLineCmdExecuted(object sender, ExecutedRoutedEventArgs? e = null)
     {
-        if (PassedTextControl.SelectedText.Length > 0)
-            PassedTextControl.SelectedText = PassedTextControl.SelectedText.MakeStringSingleLine();
-        else
-            PassedTextControl.Text = PassedTextControl.Text.MakeStringSingleLine();
+        ApplySelectedTextOrAllTextTransform(text => text.MakeStringSingleLine());
     }
 
     private void SplitOnSelectionCmdCanExecute(object sender, CanExecuteRoutedEventArgs e)
@@ -3836,6 +4107,23 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ToggleCase(object? sender = null, ExecutedRoutedEventArgs? e = null)
     {
+        if (editorMode == EtwEditorMode.Spreadsheet)
+        {
+            CaseStatusOfToggle = CurrentCase.Unknown;
+            ApplySelectedTextOrAllTextTransform(text =>
+            {
+                CurrentCase caseStatus = StringMethods.DetermineToggleCase(text);
+                return caseStatus switch
+                {
+                    CurrentCase.Lower => selectedCultureInfo.TextInfo.ToLower(text),
+                    CurrentCase.Camel => selectedCultureInfo.TextInfo.ToTitleCase(text),
+                    CurrentCase.Upper => selectedCultureInfo.TextInfo.ToUpper(text),
+                    _ => text,
+                };
+            });
+            return;
+        }
+
         string textToModify = GetSelectedTextOrAllText();
 
         if (CaseStatusOfToggle == CurrentCase.Unknown)
@@ -3869,54 +4157,43 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ToggleCaseCmdCanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
-        bool containsLetters = false;
-        string text = GetSelectedTextOrAllText();
-
-        foreach (char letter in text)
-            if (char.IsLetter(letter))
-                containsLetters = true;
-
-        if (containsLetters)
-            e.CanExecute = true;
-        else
-            e.CanExecute = false;
+        e.CanExecute = GetSelectedOrAllTextSegmentsForEdit()
+            .Any(text => text.Any(char.IsLetter));
     }
 
     private void TrimEachLineMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        string workingString = PassedTextControl.Text;
-        string[] stringSplit = workingString.Split(Environment.NewLine);
+        static string TrimEachLine(string workingString)
+        {
+            string[] stringSplit = workingString.Split(Environment.NewLine);
+            string finalString = "";
 
-        string finalString = "";
-        foreach (string line in stringSplit)
-            if (!string.IsNullOrWhiteSpace(line))
-                finalString += line.Trim() + Environment.NewLine;
+            foreach (string line in stringSplit)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                    finalString += line.Trim() + Environment.NewLine;
+            }
 
-        PassedTextControl.Text = finalString;
+            return finalString;
+        }
+
+        if (editorMode == EtwEditorMode.Spreadsheet)
+        {
+            TryApplySpreadsheetTextTransform(TrimEachLine);
+            return;
+        }
+
+        PassedTextControl.Text = TrimEachLine(PassedTextControl.Text);
     }
 
     private void TryToAlphaMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        string workingString = GetSelectedTextOrAllText();
-
-        workingString = workingString.TryFixToLetters();
-
-        if (PassedTextControl.SelectionLength == 0)
-            PassedTextControl.Text = workingString;
-        else
-            PassedTextControl.SelectedText = workingString;
+        ApplySelectedTextOrAllTextTransform(text => text.TryFixToLetters());
     }
 
     private void TryToNumberMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        string workingString = GetSelectedTextOrAllText();
-
-        workingString = workingString.TryFixToNumbers();
-
-        if (PassedTextControl.SelectionLength == 0)
-            PassedTextControl.Text = workingString;
-        else
-            PassedTextControl.SelectedText = workingString;
+        ApplySelectedTextOrAllTextTransform(text => text.TryFixToNumbers());
     }
 
     private void UnstackExecuted(object? sender = null, ExecutedRoutedEventArgs? e = null)
@@ -4986,30 +5263,16 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void CorrectGuid_Click(object sender, RoutedEventArgs e)
     {
-        string workingString = GetSelectedTextOrAllText();
-
-        workingString = workingString.CorrectCommonGuidErrors();
-
-        if (PassedTextControl.SelectionLength == 0)
-            PassedTextControl.Text = workingString;
-        else
-            PassedTextControl.SelectedText = workingString;
+        ApplySelectedTextOrAllTextTransform(text => text.CorrectCommonGuidErrors());
     }
 
     private async void SummarizeMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        string textToSummarize = GetSelectedTextOrAllText();
-
         SetToLoading("Summarizing...");
 
         try
         {
-            string summarizedText = await WindowsAiUtilities.SummarizeParagraph(textToSummarize);
-
-            if (PassedTextControl.SelectionLength == 0)
-                PassedTextControl.Text = summarizedText;
-            else
-                PassedTextControl.SelectedText = summarizedText;
+            await ApplySelectedTextOrAllTextTransformAsync(text => WindowsAiUtilities.SummarizeParagraph(text));
         }
         finally
         {
@@ -5028,17 +5291,10 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void RewriteMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        string textToRewrite = GetSelectedTextOrAllText();
-
         SetToLoading("Rewriting...");
         try
         {
-            string summarizedText = await WindowsAiUtilities.Rewrite(textToRewrite);
-
-            if (PassedTextControl.SelectionLength == 0)
-                PassedTextControl.Text = summarizedText;
-            else
-                PassedTextControl.SelectedText = summarizedText;
+            await ApplySelectedTextOrAllTextTransformAsync(text => WindowsAiUtilities.Rewrite(text));
         }
         finally
         {
@@ -5048,18 +5304,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void ConvertTableMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        string textToTable = GetSelectedTextOrAllText();
-
         SetToLoading("Converting...");
 
         try
         {
-            string summarizedText = await WindowsAiUtilities.TextToTable(textToTable);
-
-            if (PassedTextControl.SelectionLength == 0)
-                PassedTextControl.Text = summarizedText;
-            else
-                PassedTextControl.SelectedText = summarizedText;
+            await ApplySelectedTextOrAllTextTransformAsync(text => WindowsAiUtilities.TextToTable(text));
         }
         finally
         {
@@ -5108,22 +5357,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private async Task PerformTranslationAsync(string targetLanguage)
     {
-        string textToTranslate = GetSelectedTextOrAllText();
-
         SetToLoading($"Translating to {targetLanguage}...");
 
         try
         {
-            string translatedText = await WindowsAiUtilities.TranslateText(textToTranslate, targetLanguage);
-
-            if (PassedTextControl.SelectionLength == 0)
-            {
-                PassedTextControl.Text = translatedText;
-            }
-            else
-            {
-                PassedTextControl.SelectedText = translatedText;
-            }
+            await ApplySelectedTextOrAllTextTransformAsync(text => WindowsAiUtilities.TranslateText(text, targetLanguage));
         }
         catch (Exception ex)
         {
