@@ -4,12 +4,15 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Text_Grab.Interfaces;
+using Text_Grab.Models;
 
 namespace Text_Grab.Utilities;
 
 public class IoUtilities
 {
     public static readonly List<string> ImageExtensions = [".png", ".bmp", ".jpg", ".jpeg", ".tiff", ".gif", ".tif", ".webp", ".ico"];
+    public static readonly List<string> MarkdownExtensions = [".md", ".markdown"];
+    public static readonly List<string> SpreadsheetExtensions = [".csv", ".tsv", ".tab"];
 
     public static bool IsImageFile(string path)
     {
@@ -25,6 +28,35 @@ public class IoUtilities
             return false;
 
         return ImageExtensions.Contains(extension.ToLowerInvariant());
+    }
+
+    public static bool IsMarkdownFileExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+            return false;
+
+        return MarkdownExtensions.Contains(extension.ToLowerInvariant());
+    }
+
+    public static bool IsSpreadsheetFileExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+            return false;
+
+        return SpreadsheetExtensions.Contains(extension.ToLowerInvariant());
+    }
+
+    public static EtwEditorMode GetEditorModeForPath(string? path)
+    {
+        string extension = Path.GetExtension(path ?? string.Empty);
+
+        if (IsSpreadsheetFileExtension(extension))
+            return EtwEditorMode.Spreadsheet;
+
+        if (IsMarkdownFileExtension(extension))
+            return EtwEditorMode.Markdown;
+
+        return EtwEditorMode.Text;
     }
 
     public static async Task<(string TextContent, OpenContentKind SourceKindOfContent)> GetContentFromPath(string pathOfFileToOpen, bool isMultipleFiles = false, ILanguage? language = null)

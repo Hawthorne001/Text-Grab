@@ -470,7 +470,7 @@ public class HistoryService
 
         try
         {
-            FileUtilities.SaveTextFile(historyAsJson, $"{fileName}.json", FileStorageKind.WithHistory);
+            SaveHistoryTextFileBlocking(historyAsJson, $"{fileName}.json");
         }
         catch (Exception ex)
         {

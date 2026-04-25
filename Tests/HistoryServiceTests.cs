@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows;
+using System.Reflection;
 using Text_Grab;
 using Text_Grab.Models;
 using Text_Grab.Services;
@@ -179,6 +180,72 @@ public class HistoryServiceTests
         Assert.DoesNotContain("\"LanguageKind\": \"UiAutomation\"", savedHistoryJson);
         Assert.DoesNotContain($"\"LanguageTag\": \"{UiAutomationLang.Tag}\"", savedHistoryJson);
         Assert.Contains("\"UsedUiAutomation\": true", savedHistoryJson);
+    }
+
+    [WpfFact]
+    public async Task TextHistory_PreservesMarkdownEditorModeAndSource()
+    {
+        await SaveHistoryFileAsync(
+            "HistoryTextOnly.json",
+            [
+                new HistoryInfo
+                {
+                    ID = "markdown-history",
+                    CaptureDateTime = new DateTimeOffset(2024, 1, 5, 12, 0, 0, TimeSpan.Zero),
+                    TextContent = "# Heading\r\n\r\n**bold**",
+                    SourceMode = TextGrabMode.EditText,
+                    EditorMode = EtwEditorMode.Markdown
+                }
+            ]);
+
+        HistoryService historyService = new();
+        HistoryInfo historyItem = Assert.Single(historyService.GetEditWindows());
+
+        Assert.Equal(EtwEditorMode.Markdown, historyItem.EditorMode);
+        Assert.Equal("# Heading\r\n\r\n**bold**", historyItem.TextContent);
+    }
+
+    [WpfFact]
+    public void TextHistory_WriteHistory_PersistsSavedEditWindowText()
+    {
+        bool originalUseHistory = AppUtilities.TextGrabSettings.UseHistory;
+        AppUtilities.TextGrabSettings.UseHistory = true;
+
+        try
+        {
+            HistoryService historyService = new();
+            historyService.DeleteHistory();
+            SetPrivateField(historyService, "HistoryTextOnly", new List<HistoryInfo>
+            {
+                new()
+                {
+                    ID = "saved-edit-window",
+                    CaptureDateTime = new DateTimeOffset(2024, 1, 6, 12, 0, 0, TimeSpan.Zero),
+                    TextContent = "history text from close action",
+                    SourceMode = TextGrabMode.EditText
+                }
+            });
+            SetPrivateField(historyService, "_textHistoryLoaded", true);
+            SetPrivateField(historyService, "_hasPendingWrite", true);
+
+            historyService.WriteHistory();
+            historyService.ReleaseLoadedHistories();
+
+            HistoryInfo historyItem = Assert.Single(historyService.GetEditWindows());
+            Assert.Equal("history text from close action", historyItem.TextContent);
+        }
+        finally
+        {
+            AppUtilities.TextGrabSettings.UseHistory = originalUseHistory;
+        }
+    }
+
+    private static void SetPrivateField<T>(object target, string fieldName, T value)
+    {
+        FieldInfo fieldInfo = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Field '{fieldName}' was not found.");
+
+        fieldInfo.SetValue(target, value);
     }
 
     private static Task<bool> SaveHistoryFileAsync(string fileName, List<HistoryInfo> historyItems)

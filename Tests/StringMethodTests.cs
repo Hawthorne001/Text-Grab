@@ -35,6 +35,28 @@ lines
         Assert.Equal(expectedWord, singleWordAtSix);
     }
 
+    [Theory]
+    [InlineData("there", "hello there", 11)]
+    [InlineData("world", "hello world", 10)]
+    [InlineData("Alpha", "Alpha", 5)]
+    [InlineData("hello", " hello", 0)]
+    public void CursorWordBoundaries_ClampsEndOfTextToNearestWord(string expectedWord, string input, int cursorPosition)
+    {
+        (int start, int length) = input.CursorWordBoundaries(cursorPosition);
+
+        Assert.Equal(expectedWord, input.Substring(start, length));
+    }
+
+    [Fact]
+    public void CursorWordBoundaries_AllWhitespace_ReturnsEmptyRange()
+    {
+        const string input = "   ";
+
+        (int start, int length) = input.CursorWordBoundaries(1);
+
+        Assert.Equal(string.Empty, input.Substring(start, length));
+    }
+
     private static string multiLineInput = @"Hello this is lots 
 of text which has several lines
 and some spaces at the ends of line 

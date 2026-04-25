@@ -137,7 +137,7 @@ public class FileUtilities
             StorageFile file = await folder.GetFileAsync(fileName);
             using Stream stream = await file.OpenStreamForReadAsync();
             StreamReader streamReader = new(stream);
-            return streamReader.ReadToEnd();
+            return await streamReader.ReadToEndAsync();
         }
         catch
         {

@@ -80,6 +80,22 @@
 		</uap3:FileTypeAssociation>
 	  </uap3:Extension>
 
+	  <uap3:Extension Category="windows.fileTypeAssociation">
+		<uap3:FileTypeAssociation Name="textgrab.documents">
+		  <uap:SupportedFileTypes>
+			<uap:FileType>.csv</uap:FileType>
+			<uap:FileType>.tsv</uap:FileType>
+			<uap:FileType>.tab</uap:FileType>
+			<uap:FileType>.md</uap:FileType>
+			<uap:FileType>.markdown</uap:FileType>
+			<uap:FileType>.txt</uap:FileType>
+		  </uap:SupportedFileTypes>
+		  <uap2:SupportedVerbs>
+			<uap3:Verb Id="OpenInTextGrab" Parameters="&quot;%1&quot;">Open with Text Grab</uap3:Verb>
+		  </uap2:SupportedVerbs>
+		</uap3:FileTypeAssociation>
+	  </uap3:Extension>
+
 	  <!-- Share target integration -->
 	  <uap:Extension Category="windows.shareTarget">
 		<uap:ShareTarget Description="Grab text from shared content">
