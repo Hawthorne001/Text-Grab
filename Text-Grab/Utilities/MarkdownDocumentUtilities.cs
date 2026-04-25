@@ -356,8 +356,12 @@ public static class MarkdownDocumentUtilities
 
             case LinkInline linkInline when !linkInline.IsImage:
                 Hyperlink hyperlink = new();
-                if (!string.IsNullOrWhiteSpace(linkInline.GetDynamicUrl != null ? linkInline.GetDynamicUrl() : linkInline.Url))
-                    hyperlink.NavigateUri = new Uri(linkInline.GetDynamicUrl != null ? linkInline.GetDynamicUrl()! : linkInline.Url!, UriKind.RelativeOrAbsolute);
+                string? linkUrl = linkInline.GetDynamicUrl != null ? linkInline.GetDynamicUrl() : linkInline.Url;
+                if (!string.IsNullOrWhiteSpace(linkUrl) &&
+                    Uri.TryCreate(linkUrl, UriKind.RelativeOrAbsolute, out Uri? navigateUri))
+                {
+                    hyperlink.NavigateUri = navigateUri;
+                }
 
                 AppendInlineContainer(hyperlink.Inlines, linkInline, source);
                 if (hyperlink.Inlines.FirstInline is null)
@@ -512,7 +516,7 @@ public static class MarkdownDocumentUtilities
         string rawText = NormalizeDocumentText(new TextRange(cell.ContentStart, cell.ContentEnd).Text);
         return rawText
             .Replace("|", "\\|", StringComparison.Ordinal)
-            .Replace(Environment.NewLine, "<br />", StringComparison.Ordinal);
+            .Replace("\n", "<br />", StringComparison.Ordinal);
     }
 
     private static string SerializeInlines(InlineCollection inlines, bool preserveLiteralMarkdown)
@@ -536,6 +540,7 @@ public static class MarkdownDocumentUtilities
                 builder.Append(GetInlineRole(run) switch
                 {
                     MarkdownInlineRole.TaskListMarker => GetTaskListMarkerChecked(run) ? "[x]" : "[ ]",
+                    MarkdownInlineRole.CodeSpan => $"`{NormalizeDocumentText(run.Text)}`",
                     MarkdownInlineRole.LiteralMarkdown => run.Text,
                     _ when preserveLiteralMarkdown => run.Text,
                     _ => EscapeMarkdownText(run.Text)

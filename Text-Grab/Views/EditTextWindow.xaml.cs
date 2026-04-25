@@ -1641,7 +1641,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         isLoadingOpenedFile = true;
         try
         {
-            PassedTextControl.AppendText(TextContent);
+            PassedTextControl.Text = TextContent;
 
             if (!IsLoaded)
                 return;
@@ -3361,7 +3361,6 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void SaveBTN_Click(object sender, RoutedEventArgs e)
     {
-        SyncTextFromActiveEditor();
         _ = SaveCurrentDocument();
     }
 
