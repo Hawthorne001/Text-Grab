@@ -50,7 +50,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private const double SpreadsheetDefaultColumnWidth = 120;
     private const double HorizontalWheelScrollStep = 48;
     private const int WmMouseHWheel = 0x020E;
-    private const string OpenDocumentFilter = "Supported text documents (*.csv;*.tsv;*.tab;*.md;*.markdown;*.txt)|*.csv;*.tsv;*.tab;*.md;*.markdown;*.txt|Spreadsheet documents (*.csv;*.tsv;*.tab)|*.csv;*.tsv;*.tab|Markdown documents (*.md;*.markdown)|*.md;*.markdown|Text documents (*.txt)|*.txt|All files (*.*)|*.*";
+    private const string OpenDocumentFilter = "Supported documents (*.pdf;*.csv;*.tsv;*.tab;*.md;*.markdown;*.txt)|*.pdf;*.csv;*.tsv;*.tab;*.md;*.markdown;*.txt|PDF documents (*.pdf)|*.pdf|Spreadsheet documents (*.csv;*.tsv;*.tab)|*.csv;*.tsv;*.tab|Markdown documents (*.md;*.markdown)|*.md;*.markdown|Text documents (*.txt)|*.txt|All files (*.*)|*.*";
     private const string SaveDocumentFilter = "Spreadsheet documents (*.csv;*.tsv;*.tab)|*.csv;*.tsv;*.tab|Markdown documents (*.md;*.markdown)|*.md;*.markdown|Text documents (*.txt)|*.txt|All files (*.*)|*.*";
     #region Fields
 

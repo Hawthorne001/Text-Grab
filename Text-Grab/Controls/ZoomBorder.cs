@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Media3D;
 
 // From StackOverFlow: 
 // https://stackoverflow.com/questions/741956/pan-zoom-image
@@ -40,6 +41,8 @@ public class ZoomBorder : Border
     public bool CanPan { get; set; } = false;
 
     public bool CanZoom { get; set; } = true;
+
+    public bool RequireSpaceToPan { get; set; } = false;
 
     public void Initialize(UIElement element)
     {
@@ -87,6 +90,36 @@ public class ZoomBorder : Border
         CanPan = false;
     }
 
+    private bool IsPanGestureActive() => !RequireSpaceToPan || Keyboard.IsKeyDown(Key.Space);
+
+    private bool BlocksPanFromSource(object? originalSource)
+    {
+        DependencyObject? current = originalSource switch
+        {
+            DependencyObject dependencyObject => dependencyObject,
+            null => null,
+            _ => null
+        };
+
+        while (current is not null)
+        {
+            if (current is TextBox)
+                return true;
+
+            if (current is PdfTextLineOverlay)
+                return !IsPanGestureActive();
+
+            current = current switch
+            {
+                Visual visual => VisualTreeHelper.GetParent(visual),
+                Visual3D visual3D => VisualTreeHelper.GetParent(visual3D),
+                _ => null
+            };
+        }
+
+        return false;
+    }
+
     private void Child_MouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (child is null || !CanZoom)
@@ -117,7 +150,7 @@ public class ZoomBorder : Border
 
     private void Child_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (child is null)
+        if (child is null || !IsPanGestureActive() || BlocksPanFromSource(e.OriginalSource))
             return;
 
         TranslateTransform tt = GetTranslateTransform(child);
@@ -142,7 +175,7 @@ public class ZoomBorder : Border
 
     private void Child_MouseMove(object sender, MouseEventArgs e)
     {
-        if (e.OriginalSource is TextBox)
+        if (BlocksPanFromSource(e.OriginalSource))
             return;
 
         if (child is null
@@ -150,6 +183,7 @@ public class ZoomBorder : Border
             || st.ScaleX == 1.0
             || Mouse.LeftButton == MouseButtonState.Released
             || !CanPan
+            || !IsPanGestureActive()
             || KeyboardExtensions.IsShiftDown()
             || KeyboardExtensions.IsCtrlDown())
         {

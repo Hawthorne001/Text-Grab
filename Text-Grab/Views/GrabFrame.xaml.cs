@@ -56,6 +56,9 @@ public partial class GrabFrame : Window
     private readonly GrabTemplate? _editingTemplate;
     private GrabTemplate? _activeGrabTemplate = null;
     private string? _currentImagePath;
+    private PdfDocumentRenderer? _loadedPdfDocument;
+    private PdfPageContent? _currentPdfPageContent;
+    private int _currentPdfPageIndex = -1;
     private bool hasLoadedImageSource = false;
     private bool IsDragOver = false;
     private bool isDrawing = false;
@@ -92,6 +95,7 @@ public partial class GrabFrame : Window
     private int totalWordsToTranslate = 0;
     private int translatedWordsCount = 0;
     private CancellationTokenSource? translationCancellationTokenSource;
+    private readonly List<PdfTextLineOverlay> pdfTextLineOverlays = [];
     private const string TargetLanguageMenuHeader = "Target Language";
 
     #endregion Fields
@@ -114,9 +118,9 @@ public partial class GrabFrame : Window
     }
 
     /// <summary>
-    /// Creates a GrabFrame and loads the specified image file.
+    /// Creates a GrabFrame and loads the specified image or PDF file.
     /// </summary>
-    /// <param name="imagePath">The path to the image file to load.</param>
+    /// <param name="imagePath">The path to the file to load.</param>
     public GrabFrame(string imagePath)
     {
         StandardInitialize();
@@ -126,11 +130,11 @@ public partial class GrabFrame : Window
         // Validate the path before loading
         if (string.IsNullOrEmpty(imagePath))
         {
-            Debug.WriteLine("GrabFrame: Empty image path provided");
+            Debug.WriteLine("GrabFrame: Empty file path provided");
             Loaded += async (s, e) => await new Wpf.Ui.Controls.MessageBox
             {
                 Title = "Text Grab",
-                Content = "No image file path was provided.",
+                Content = "No file path was provided.",
                 CloseButtonText = "OK"
             }.ShowDialogAsync();
             return;
@@ -141,17 +145,17 @@ public partial class GrabFrame : Window
 
         if (!File.Exists(absolutePath))
         {
-            Debug.WriteLine($"GrabFrame: Image file not found: {absolutePath}");
+            Debug.WriteLine($"GrabFrame: File not found: {absolutePath}");
             Loaded += async (s, e) => await new Wpf.Ui.Controls.MessageBox
             {
                 Title = "Text Grab",
-                Content = $"Image file not found:\n{absolutePath}",
+                Content = $"File not found:\n{absolutePath}",
                 CloseButtonText = "OK"
             }.ShowDialogAsync();
             return;
         }
 
-        Loaded += async (s, e) => await TryLoadImageFromPath(absolutePath);
+        Loaded += async (s, e) => await TryLoadDocumentFromPath(absolutePath);
     }
 
     /// <summary>
@@ -202,7 +206,7 @@ public partial class GrabFrame : Window
         if (!string.IsNullOrEmpty(template.SourceImagePath) && File.Exists(template.SourceImagePath))
         {
             isStaticImageSource = true;
-            await TryLoadImageFromPath(template.SourceImagePath);
+            await TryLoadDocumentFromPath(template.SourceImagePath);
             reDrawTimer.Stop();
         }
         else
@@ -544,6 +548,73 @@ public partial class GrabFrame : Window
         frameMessageTimer.Start();
     }
 
+    private void ClearLoadedPdfDocument()
+    {
+        _loadedPdfDocument?.Dispose();
+        _loadedPdfDocument = null;
+        _currentPdfPageContent = null;
+        _currentPdfPageIndex = -1;
+        MainZoomBorder.RequireSpaceToPan = false;
+        UpdatePdfPageNavigation();
+    }
+
+    private async Task ChangePdfPageAsync(int delta)
+    {
+        if (_loadedPdfDocument is null)
+            return;
+
+        int targetPageIndex = _currentPdfPageIndex + delta;
+        if (targetPageIndex < 0 || targetPageIndex >= _loadedPdfDocument.PageCount)
+            return;
+
+        await ShowPdfPageAsync(targetPageIndex);
+    }
+
+    private async Task ShowPdfPageAsync(int pageIndex)
+    {
+        if (_loadedPdfDocument is null)
+            return;
+
+        reDrawTimer.Stop();
+        ResetGrabFrame();
+        await Task.Delay(300);
+
+        _currentPdfPageContent = await _loadedPdfDocument.GetPageContentAsync(pageIndex);
+        frameContentImageSource = _currentPdfPageContent.RenderedPage;
+        hasLoadedImageSource = true;
+        isStaticImageSource = true;
+        frozenUiAutomationSnapshot = null;
+        liveUiAutomationSnapshot = null;
+        _currentImagePath = _loadedPdfDocument.FilePath;
+        _currentPdfPageIndex = pageIndex;
+        FreezeToggleButton.IsChecked = true;
+        FreezeGrabFrame();
+        FreezeToggleButton.Visibility = Visibility.Collapsed;
+        MainZoomBorder.RequireSpaceToPan = true;
+        UpdatePdfPageNavigation();
+        SwitchToOcrFallbackIfUiAutomation();
+
+        reDrawTimer.Start();
+    }
+
+    private void UpdatePdfPageNavigation()
+    {
+        bool isPdfLoaded = _loadedPdfDocument is not null;
+        PdfPagePanel.Visibility = isPdfLoaded ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!isPdfLoaded || _currentPdfPageIndex < 0)
+        {
+            PdfPageTextBlock.Text = string.Empty;
+            PreviousPdfPageButton.IsEnabled = false;
+            NextPdfPageButton.IsEnabled = false;
+            return;
+        }
+
+        PdfPageTextBlock.Text = $"Page {_currentPdfPageIndex + 1} / {_loadedPdfDocument!.PageCount}";
+        PreviousPdfPageButton.IsEnabled = _currentPdfPageIndex > 0;
+        NextPdfPageButton.IsEnabled = _currentPdfPageIndex < _loadedPdfDocument.PageCount - 1;
+    }
+
     /// <summary>
     /// When a static image is loaded and the active language is UI Automation (Direct Text),
     /// silently switch to the OCR fallback language so no warning is shown.
@@ -624,6 +695,7 @@ public partial class GrabFrame : Window
     public bool IsEditingAnyWordBorders => wordBorders.Any(x => x.IsEditing);
     public bool IsFreezeMode { get; set; } = false;
     public bool IsFromEditWindow => destinationTextBox is not null;
+    private bool IsPdfDocumentLoaded => _loadedPdfDocument is not null;
     public bool IsWordEditMode { get; set; } = true;
 
     public bool ShouldSaveOnClose { get; set; } = true;
@@ -636,6 +708,17 @@ public partial class GrabFrame : Window
     {
         return (GetKeyState(code) & 0xFF00) == 0xFF00;
     }
+
+    private static FrameworkElement? GetInteractionSurface(object? sender) => sender as FrameworkElement;
+
+    private bool IsPdfTextInteraction(object? sender) => ReferenceEquals(sender, PdfTextCanvas);
+
+    private bool IsPdfPanGestureActive =>
+        IsPdfDocumentLoaded
+        && MainZoomBorder.CanPan
+        && !KeyboardExtensions.IsShiftDown()
+        && !KeyboardExtensions.IsCtrlDown()
+        && Keyboard.IsKeyDown(Key.Space);
 
     public HistoryInfo AsHistoryItem()
     {
@@ -1249,12 +1332,44 @@ public partial class GrabFrame : Window
                 wordBorder.WasRegionSelected = false;
         }
 
+        foreach (PdfTextLineOverlay pdfTextLine in pdfTextLineOverlays)
+        {
+            if (rectSelect.IntersectsWith(new Rect(pdfTextLine.Left, pdfTextLine.Top, pdfTextLine.Width, pdfTextLine.Height)))
+            {
+                clickedEmptySpace = false;
+
+                if (!smallSelection)
+                {
+                    pdfTextLine.Select();
+                    pdfTextLine.WasRegionSelected = true;
+                }
+                else if (!finalCheck)
+                {
+                    if (pdfTextLine.IsSelected)
+                        pdfTextLine.Deselect();
+                    else
+                        pdfTextLine.Select();
+                    pdfTextLine.WasRegionSelected = false;
+                }
+            }
+            else if (pdfTextLine.WasRegionSelected && !smallSelection)
+            {
+                pdfTextLine.Deselect();
+            }
+
+            if (finalCheck)
+                pdfTextLine.WasRegionSelected = false;
+        }
+
         if (clickedEmptySpace
             && smallSelection
             && finalCheck)
         {
             foreach (WordBorder wb in wordBorders)
                 wb.Deselect();
+
+            foreach (PdfTextLineOverlay pdfTextLine in pdfTextLineOverlays)
+                pdfTextLine.Deselect();
         }
 
         if (finalCheck)
@@ -1324,6 +1439,13 @@ public partial class GrabFrame : Window
     {
         RectanglesCanvas.Children.Clear();
         wordBorders.Clear();
+        ClearRenderedPdfTextLines();
+    }
+
+    private void ClearRenderedPdfTextLines()
+    {
+        PdfTextCanvas.Children.Clear();
+        pdfTextLineOverlays.Clear();
     }
 
     private IReadOnlyCollection<IntPtr>? GetUiAutomationExcludedHandles()
@@ -1384,6 +1506,28 @@ public partial class GrabFrame : Window
             });
     }
 
+    private PdfTextLineOverlay CreatePdfTextLineOverlay(Windows.Foundation.Rect sourceRect, double sourceScale, string text, DpiScale dpi)
+    {
+        Rect displayRect = new(
+            sourceRect.X / (dpi.DpiScaleX * sourceScale),
+            sourceRect.Y / (dpi.DpiScaleY * sourceScale),
+            sourceRect.Width / (dpi.DpiScaleX * sourceScale),
+            sourceRect.Height / (dpi.DpiScaleY * sourceScale));
+
+        PdfTextLineOverlay overlay = new(text);
+        overlay.ApplyLayout(displayRect);
+        return overlay;
+    }
+
+    private void AddRenderedPdfTextLine(PdfTextLineOverlay overlay)
+    {
+        if (!IsOcrValid)
+            return;
+
+        pdfTextLineOverlays.Add(overlay);
+        _ = PdfTextCanvas.Children.Add(overlay);
+    }
+
     private Task DrawRectanglesAroundWords(string searchWord = "")
     {
         return CurrentLanguage is UiAutomationLang
@@ -1395,6 +1539,12 @@ public partial class GrabFrame : Window
     {
         if (isDrawing || IsDragOver)
             return;
+
+        if (_currentPdfPageContent?.HasNativeText is true)
+        {
+            await DrawPdfRectanglesAsync(searchWord);
+            return;
+        }
 
         isDrawing = true;
         IsOcrValid = true;
@@ -1517,6 +1667,71 @@ public partial class GrabFrame : Window
         reSearchTimer.Start();
 
         // Trigger translation if enabled
+        if (isTranslationEnabled && WindowsAiUtilities.CanDeviceUseWinAI())
+        {
+            translationTimer.Stop();
+            translationTimer.Start();
+        }
+    }
+
+    private async Task DrawPdfRectanglesAsync(string searchWord = "")
+    {
+        if (isDrawing || IsDragOver || _loadedPdfDocument is null || _currentPdfPageContent is null || _currentPdfPageIndex < 0)
+            return;
+
+        isDrawing = true;
+        IsOcrValid = true;
+        windowFrameImageScale = 1;
+        ocrResultOfWindow = null;
+
+        if (string.IsNullOrWhiteSpace(searchWord))
+            searchWord = SearchBox.Text;
+
+        ClearRenderedWordBorders();
+
+        if (frameContentImageSource is not BitmapSource)
+        {
+            isDrawing = false;
+            reDrawTimer.Start();
+            return;
+        }
+
+        DpiScale dpi = VisualTreeHelper.GetDpi(this);
+        SyncRectanglesCanvasSizeToImage();
+        isSpaceJoining = CurrentLanguage!.IsSpaceJoining();
+
+        IReadOnlyList<PdfPageTextLine> pageLines = await _loadedPdfDocument.GetSelectableLinesAsync(_currentPdfPageIndex, CurrentLanguage);
+
+        foreach (PdfPageTextLine pageLine in pageLines)
+        {
+            string lineText = pageLine.Text;
+            if (!pageLine.IsNativeText)
+            {
+                if (DefaultSettings.CorrectErrors)
+                    lineText = lineText.TryFixEveryWordLetterNumberErrors();
+
+                if (DefaultSettings.CorrectToLatin)
+                    lineText = lineText.ReplaceGreekOrCyrillicWithLatin();
+            }
+
+            if (CurrentLanguage!.IsRightToLeft() && !pageLine.IsNativeText)
+            {
+                StringBuilder sb = new(lineText);
+                sb.ReverseWordsForRightToLeft();
+                sb.RemoveTrailingNewlines();
+                lineText = sb.ToString();
+            }
+
+            PdfTextLineOverlay overlay = CreatePdfTextLineOverlay(pageLine.SourceRect, 1, lineText, dpi);
+            AddRenderedPdfTextLine(overlay);
+        }
+
+        if (DefaultSettings.TryToReadBarcodes)
+            TryToReadBarcodes(dpi);
+
+        isDrawing = false;
+        reSearchTimer.Start();
+
         if (isTranslationEnabled && WindowsAiUtilities.CanDeviceUseWinAI())
         {
             translationTimer.Stop();
@@ -1719,6 +1934,8 @@ public partial class GrabFrame : Window
             SearchBox.Text = "";
         else if (RectanglesCanvas.Children.Count > 0)
             ResetGrabFrame();
+        else if (PdfTextCanvas.Children.Count > 0)
+            ResetGrabFrame();
         else
             Close();
     }
@@ -1790,6 +2007,7 @@ public partial class GrabFrame : Window
         if (double.IsFinite(sourceWidth) && sourceWidth > 0)
         {
             GrabFrameImage.Width = sourceWidth;
+            PdfTextCanvas.Width = sourceWidth;
             RectanglesCanvas.Width = sourceWidth;
             TemplateRegionOverlayCanvas.Width = sourceWidth;
         }
@@ -1797,6 +2015,7 @@ public partial class GrabFrame : Window
         if (double.IsFinite(sourceHeight) && sourceHeight > 0)
         {
             GrabFrameImage.Height = sourceHeight;
+            PdfTextCanvas.Height = sourceHeight;
             RectanglesCanvas.Height = sourceHeight;
             TemplateRegionOverlayCanvas.Height = sourceHeight;
         }
@@ -1806,6 +2025,12 @@ public partial class GrabFrame : Window
     {
         if (IsFreezeMode)
         {
+            if (IsPdfDocumentLoaded)
+            {
+                FreezeToggleButton.IsChecked = true;
+                return;
+            }
+
             FreezeToggleButton.IsChecked = false;
             UnfreezeGrabFrame();
             ResetGrabFrame();
@@ -1827,6 +2052,8 @@ public partial class GrabFrame : Window
     {
         if (FreezeToggleButton.IsChecked is bool freezeMode && freezeMode)
             FreezeGrabFrame();
+        else if (IsPdfDocumentLoaded)
+            FreezeToggleButton.IsChecked = true;
         else
             UnfreezeGrabFrame();
     }
@@ -1967,6 +2194,7 @@ public partial class GrabFrame : Window
 
         FrameText = "";
         wordBorders.Clear();
+        pdfTextLineOverlays.Clear();
         UpdateFrameText();
     }
 
@@ -2011,7 +2239,7 @@ public partial class GrabFrame : Window
         frameContentImageSource = null;
         isStaticImageSource = true;
 
-        await TryLoadImageFromPath(fileName);
+        await TryLoadDocumentFromPath(fileName);
 
         IsDragOver = false;
 
@@ -2161,6 +2389,16 @@ public partial class GrabFrame : Window
             else
                 wordBorder.Select();
         }
+
+        foreach (PdfTextLineOverlay pdfTextLine in pdfTextLineOverlays)
+        {
+            if (pdfTextLine.IsSelected)
+                pdfTextLine.Deselect();
+            else
+                pdfTextLine.Select();
+        }
+
+        UpdateFrameText();
     }
 
     private void LanguagesComboBox_MouseDown(object sender, MouseButtonEventArgs e)
@@ -2351,7 +2589,7 @@ public partial class GrabFrame : Window
         Microsoft.Win32.OpenFileDialog dlg = new()
         {
             // Set filter for file extension and default file extension
-            Filter = FileUtilities.GetImageFilter()
+            Filter = FileUtilities.GetVisualDocumentFilter()
         };
 
         bool? result = dlg.ShowDialog();
@@ -2359,7 +2597,7 @@ public partial class GrabFrame : Window
         if (result is false || !File.Exists(dlg.FileName))
             return;
 
-        await TryLoadImageFromPath(dlg.FileName);
+        await TryLoadDocumentFromPath(dlg.FileName);
 
         reDrawTimer.Start();
     }
@@ -2386,6 +2624,7 @@ public partial class GrabFrame : Window
             frameContentImageSource = clipboardImage;
         }
 
+        ClearLoadedPdfDocument();
         hasLoadedImageSource = true;
         isStaticImageSource = true;
         frozenUiAutomationSnapshot = null;
@@ -2405,6 +2644,11 @@ public partial class GrabFrame : Window
 
     private void RectanglesCanvas_MouseDown(object sender, MouseButtonEventArgs e)
     {
+        bool isPdfTextInteraction = IsPdfTextInteraction(sender);
+        FrameworkElement interactionSurface = isPdfTextInteraction
+            ? (e.OriginalSource as FrameworkElement ?? PdfTextCanvas)
+            : (GetInteractionSurface(sender) ?? RectanglesCanvas);
+
         reDrawTimer.Stop();
         GrabBTN.Focus();
 
@@ -2422,13 +2666,17 @@ public partial class GrabFrame : Window
                 return;
             }
 
-            if (!KeyboardExtensions.IsShiftDown() && !KeyboardExtensions.IsCtrlDown())
+            bool shouldPanInsteadOfSelect = IsPdfDocumentLoaded
+                ? IsPdfPanGestureActive
+                : !KeyboardExtensions.IsShiftDown() && !KeyboardExtensions.IsCtrlDown() && !isPdfTextInteraction;
+
+            if (shouldPanInsteadOfSelect)
                 return;
         }
 
         isSelecting = true;
         clickedPoint = e.GetPosition(RectanglesCanvas);
-        RectanglesCanvas.CaptureMouse();
+        interactionSurface.CaptureMouse();
         selectBorder.Height = 1;
         selectBorder.Width = 1;
 
@@ -2439,8 +2687,11 @@ public partial class GrabFrame : Window
             e.Handled = true;
 
             isMiddleDown = true;
-            ResetGrabFrame();
-            UnfreezeGrabFrame();
+            if (!IsPdfDocumentLoaded)
+            {
+                ResetGrabFrame();
+                UnfreezeGrabFrame();
+            }
             return;
         }
 
@@ -2460,12 +2711,17 @@ public partial class GrabFrame : Window
 
     private void RectanglesCanvas_MouseMove(object sender, MouseEventArgs e)
     {
+        FrameworkElement interactionSurface = GetInteractionSurface(sender) ?? RectanglesCanvas;
+        bool isPdfTextInteraction = IsPdfTextInteraction(sender);
+
         if (IsCtrlDown)
-            RectanglesCanvas.Cursor = Cursors.Cross;
+            interactionSurface.Cursor = Cursors.Cross;
         else if (MainZoomBorder.CanPan)
-            RectanglesCanvas.Cursor = Cursors.SizeAll;
+            interactionSurface.Cursor = IsPdfDocumentLoaded
+                ? (IsPdfPanGestureActive ? Cursors.SizeAll : Cursors.Arrow)
+                : (isPdfTextInteraction ? Cursors.Arrow : Cursors.SizeAll);
         else
-            RectanglesCanvas.Cursor = null;
+            interactionSurface.Cursor = null;
 
         if (!isSelecting && !isMiddleDown && movingWordBordersDictionary.Count == 0)
             return;
@@ -2473,8 +2729,11 @@ public partial class GrabFrame : Window
         isMiddleDown = e.MiddleButton == MouseButtonState.Pressed;
 
         if (MainZoomBorder.CanPan
-            && !KeyboardExtensions.IsShiftDown()
-            && !KeyboardExtensions.IsCtrlDown())
+            && (IsPdfDocumentLoaded
+                ? IsPdfPanGestureActive
+                : (!KeyboardExtensions.IsShiftDown()
+                    && !KeyboardExtensions.IsCtrlDown()
+                    && !isPdfTextInteraction)))
         {
             isSelecting = false;
             return;
@@ -2522,12 +2781,13 @@ public partial class GrabFrame : Window
     {
         isSelecting = false;
         CursorClipper.UnClipCursor();
-        RectanglesCanvas.ReleaseMouseCapture();
+        Mouse.Captured?.ReleaseMouseCapture();
 
         if (e.ChangedButton == MouseButton.Middle && scrollBehavior != ScrollBehavior.Zoom)
         {
             isMiddleDown = false;
-            FreezeGrabFrame();
+            if (!IsPdfDocumentLoaded)
+                FreezeGrabFrame();
             reDrawTimer.Start();
             return;
         }
@@ -2676,6 +2936,9 @@ new GrabFrameOperationArgs()
         {
             foreach (WordBorder wb in wordBorders)
                 wb.Deselect();
+
+            foreach (PdfTextLineOverlay pdfTextLine in pdfTextLineOverlays)
+                pdfTextLine.Deselect();
             MatchesTXTBLK.Text = $"0 Matches";
             UpdateFrameText();
             return;
@@ -2697,6 +2960,9 @@ new GrabFrameOperationArgs()
         {
             foreach (WordBorder wb in wordBorders)
                 wb.Deselect();
+
+            foreach (PdfTextLineOverlay pdfTextLine in pdfTextLineOverlays)
+                pdfTextLine.Deselect();
             UpdateFrameText();
             MatchesTXTBLK.Text = $"Search Error";
             return;
@@ -2715,6 +2981,17 @@ new GrabFrameOperationArgs()
                     wb.Select();
                 else
                     wb.Deselect();
+            }
+
+            foreach (PdfTextLineOverlay pdfTextLine in pdfTextLineOverlays)
+            {
+                int numberOfMatchesInLine = regex.Count(pdfTextLine.Text);
+                numberOfMatches += numberOfMatchesInLine;
+
+                if (numberOfMatchesInLine > 0)
+                    pdfTextLine.Select();
+                else
+                    pdfTextLine.Deselect();
             }
         }
 
@@ -2796,6 +3073,11 @@ new GrabFrameOperationArgs()
     {
         foreach (WordBorder wordBorder in wordBorders)
             wordBorder.Select();
+
+        foreach (PdfTextLineOverlay pdfTextLine in pdfTextLineOverlays)
+            pdfTextLine.Select();
+
+        UpdateFrameText();
     }
 
     private void SetGrabFrameUserSettings()
@@ -3209,11 +3491,23 @@ new GrabFrameOperationArgs()
         UpdateFrameText();
     }
 
+    private async Task TryLoadDocumentFromPath(string path)
+    {
+        if (IoUtilities.IsPdfFileExtension(Path.GetExtension(path)))
+        {
+            await TryLoadPdfFromPath(path);
+            return;
+        }
+
+        await TryLoadImageFromPath(path);
+    }
+
     private async Task TryLoadImageFromPath(string path)
     {
         Uri fileURI = new(path);
         try
         {
+            ClearLoadedPdfDocument();
             ResetGrabFrame();
             await Task.Delay(300);
             BitmapImage droppedImage = new();
@@ -3244,6 +3538,28 @@ new GrabFrameOperationArgs()
             {
                 Title = "Text Grab",
                 Content = "Not an image",
+                CloseButtonText = "OK"
+            }.ShowDialogAsync();
+        }
+    }
+
+    private async Task TryLoadPdfFromPath(string path)
+    {
+        try
+        {
+            _loadedPdfDocument = await PdfDocumentRenderer.LoadAsync(path);
+            _currentImagePath = Path.GetFullPath(path);
+            await ShowPdfPageAsync(0);
+        }
+        catch (Exception ex)
+        {
+            ClearLoadedPdfDocument();
+            hasLoadedImageSource = false;
+            UnfreezeGrabFrame();
+            await new Wpf.Ui.Controls.MessageBox
+            {
+                Title = "Text Grab",
+                Content = $"Failed to open PDF.{Environment.NewLine}{ex.Message}",
                 CloseButtonText = "OK"
             }.ShowDialogAsync();
         }
@@ -3426,7 +3742,11 @@ new GrabFrameOperationArgs()
 
     private void UnfreezeGrabFrame()
     {
+        if (IsPdfDocumentLoaded)
+            return;
+
         reDrawTimer.Stop();
+        ClearLoadedPdfDocument();
         hasLoadedImageSource = false;
         isStaticImageSource = false;
         frozenUiAutomationSnapshot = null;
@@ -3448,16 +3768,63 @@ new GrabFrameOperationArgs()
         reDrawTimer.Start();
     }
 
+    private async void PreviousPdfPageButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ChangePdfPageAsync(-1);
+    }
+
+    private async void NextPdfPageButton_Click(object sender, RoutedEventArgs e)
+    {
+        await ChangePdfPageAsync(1);
+    }
+
+    private void AppendPositionedTextLines(
+        StringBuilder stringBuilder,
+        IEnumerable<(double Top, double Left, double Height, string Text, bool AllowParagraphJoin)> lines)
+    {
+        List<(double Top, double Left, double Height, string Text, bool AllowParagraphJoin)> orderedLines =
+            [.. lines
+                .Where(line => !string.IsNullOrWhiteSpace(line.Text))
+                .OrderBy(line => line.Top)
+                .ThenBy(line => line.Left)];
+
+        if (orderedLines.Count == 0)
+            return;
+
+        stringBuilder.Append(orderedLines[0].Text);
+        for (int i = 1; i < orderedLines.Count; i++)
+        {
+            (double Top, double Left, double Height, string Text, bool AllowParagraphJoin) previousLine = orderedLines[i - 1];
+            (double Top, double Left, double Height, string Text, bool AllowParagraphJoin) currentLine = orderedLines[i];
+
+            bool shouldJoinParagraph =
+                DefaultSettings.ParagraphDetection
+                && isSpaceJoining
+                && previousLine.AllowParagraphJoin
+                && currentLine.AllowParagraphJoin
+                && OcrUtilities.IsWrappedParagraph(previousLine.Top, previousLine.Height, currentLine.Top, currentLine.Height);
+
+            if (shouldJoinParagraph)
+                stringBuilder.Append(' ');
+            else
+                stringBuilder.AppendLine();
+
+            stringBuilder.Append(currentLine.Text);
+        }
+    }
+
     private void UpdateFrameText()
     {
-        string[] selectedWbs = [.. wordBorders
-            .OrderBy(b => b.Top)
-            .Where(w => w.IsSelected)
-            .Select(t => t.Word)];
-
         StringBuilder stringBuilder = new();
+        List<(double Top, double Left, double Height, string Text, bool AllowParagraphJoin)> selectedLines =
+            [.. wordBorders
+                .Where(w => w.IsSelected)
+                .Select(w => (w.Top, w.Left, w.Height, w.Word, AllowParagraphJoin: false))
+                .Concat(pdfTextLineOverlays
+                    .Where(line => line.IsSelected)
+                    .Select(line => (line.Top, line.Left, line.Height, line.Text, AllowParagraphJoin: true)))];
 
-        if (TableToggleButton.IsChecked is true)
+        if (TableToggleButton.IsChecked is true && wordBorders.Count > 0)
         {
             TryToPlaceTable();
             // Build table text via model-only API
@@ -3466,8 +3833,14 @@ new GrabFrameOperationArgs()
         }
         else
         {
-            if (selectedWbs.Length > 0)
-                stringBuilder.AppendJoin(Environment.NewLine, selectedWbs);
+            if (selectedLines.Count > 0)
+                AppendPositionedTextLines(stringBuilder, selectedLines);
+            else if (pdfTextLineOverlays.Count > 0)
+                AppendPositionedTextLines(
+                    stringBuilder,
+                    wordBorders
+                        .Select(w => (w.Top, w.Left, w.Height, w.Word, AllowParagraphJoin: false))
+                        .Concat(pdfTextLineOverlays.Select(line => (line.Top, line.Left, line.Height, line.Text, AllowParagraphJoin: true))));
             else
                 AppendWordBordersWithParagraphDetection(stringBuilder);
         }
@@ -3591,9 +3964,12 @@ new GrabFrameOperationArgs()
 
     private void ShowWordBordersMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        RectanglesCanvas.Visibility = ShowWordBordersMenuItem.IsChecked is true
+        Visibility overlayVisibility = ShowWordBordersMenuItem.IsChecked is true
             ? Visibility.Visible
             : Visibility.Hidden;
+
+        RectanglesCanvas.Visibility = overlayVisibility;
+        PdfTextCanvas.Visibility = overlayVisibility;
     }
 
     private void OverlayOpacityMenuItem_Click(object sender, RoutedEventArgs e)
@@ -3823,6 +4199,7 @@ new GrabFrameOperationArgs()
         reDrawTimer.Stop();
         RectanglesCanvas.Children.Clear();
         wordBorders.Clear();
+        ClearRenderedPdfTextLines();
 
         if (!IsFreezeMode)
             FreezeGrabFrame();
@@ -3870,6 +4247,7 @@ new GrabFrameOperationArgs()
         reDrawTimer.Stop();
         RectanglesCanvas.Children.Clear();
         wordBorders.Clear();
+        ClearRenderedPdfTextLines();
 
         if (!IsFreezeMode)
             FreezeGrabFrame();
@@ -3917,6 +4295,7 @@ new GrabFrameOperationArgs()
         reDrawTimer.Stop();
         RectanglesCanvas.Children.Clear();
         wordBorders.Clear();
+        ClearRenderedPdfTextLines();
 
         if (!IsFreezeMode)
             FreezeGrabFrame();
@@ -3964,6 +4343,7 @@ new GrabFrameOperationArgs()
         reDrawTimer.Stop();
         RectanglesCanvas.Children.Clear();
         wordBorders.Clear();
+        ClearRenderedPdfTextLines();
 
         if (!IsFreezeMode)
             FreezeGrabFrame();

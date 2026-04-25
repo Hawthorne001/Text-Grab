@@ -293,9 +293,7 @@
                         x:Name="AddRemoveAtMenuItem"
                         Click="AddRemoveAtMenuItem_Click"
                         Header="_Add, Remove, Limit..." />
-                    <MenuItem
-                        Command="{x:Static local:EditTextWindow.TransposeTableCmd}"
-                        Header="_Transpose Table" />
+                    <MenuItem Command="{x:Static local:EditTextWindow.TransposeTableCmd}" Header="_Transpose Table" />
                     <Separator />
                     <MenuItem
                         x:Name="AddSpreadsheetRowMenuItem"
@@ -551,9 +549,7 @@
                         Click="ReadFolderOfImages_Click"
                         Header="_Extract Text from Images in Folder..." />
                     <MenuItem x:Name="LanguageMenuItem" Header="OCR in Language..." />
-                    <MenuItem
-                        x:Name="GrabTemplateMenuItem"
-                        Header="Use Grab _Template..." />
+                    <MenuItem x:Name="GrabTemplateMenuItem" Header="Use Grab _Template..." />
                     <MenuItem
                         x:Name="RecursiveFoldersCheck"
                         Header="Scan all folders recursively"
@@ -735,16 +731,20 @@
                     BorderThickness="1"
                     CaretBrush="{DynamicResource TextFillColorPrimaryBrush}"
                     ContextMenu="{StaticResource MarkdownContextMenu}"
-                    FontFamily="{Binding ElementName=PassedTextControl, Path=FontFamily, Mode=OneWay}"
-                    FontSize="{Binding ElementName=PassedTextControl, Path=FontSize, Mode=OneWay}"
+                    FontFamily="{Binding ElementName=PassedTextControl,
+                                         Path=FontFamily,
+                                         Mode=OneWay}"
+                    FontSize="{Binding ElementName=PassedTextControl,
+                                       Path=FontSize,
+                                       Mode=OneWay}"
                     Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                     HorizontalScrollBarVisibility="Auto"
                     IsDocumentEnabled="True"
                     IsInactiveSelectionHighlightEnabled="True"
                     PreviewDragOver="ETWindow_DragOver"
                     PreviewDrop="ETWindow_Drop"
-                    SelectionChanged="MarkdownEditorControl_SelectionChanged"
                     SelectionBrush="{DynamicResource ControlStrongFillColorDefaultBrush}"
+                    SelectionChanged="MarkdownEditorControl_SelectionChanged"
                     SizeChanged="MarkdownEditorControl_SizeChanged"
                     SpellCheck.IsEnabled="True"
                     TextChanged="MarkdownEditorControl_TextChanged"
@@ -768,9 +768,9 @@
                     HorizontalGridLinesBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
                     HorizontalScrollBarVisibility="Auto"
                     LoadingRow="SpreadsheetDataGrid_LoadingRow"
+                    PreviewKeyDown="SpreadsheetDataGrid_PreviewKeyDown"
                     PreviewMouseLeftButtonDown="SpreadsheetDataGrid_PreviewMouseLeftButtonDown"
                     PreviewMouseRightButtonDown="SpreadsheetDataGrid_PreviewMouseRightButtonDown"
-                    PreviewKeyDown="SpreadsheetDataGrid_PreviewKeyDown"
                     RowBackground="Transparent"
                     RowHeaderStyle="{DynamicResource DataGridRowHeaderStyleDark}"
                     RowHeaderWidth="48"
@@ -790,7 +790,9 @@
                 AcceptsTab="True"
                 Background="{DynamicResource SolidBackgroundFillColorBaseBrush}"
                 ContextMenuOpening="CalcResultsTextControl_ContextMenuOpening"
-                FontSize="{Binding ElementName=PassedTextControl, Path=FontSize, Mode=OneWay}"
+                FontSize="{Binding ElementName=PassedTextControl,
+                                   Path=FontSize,
+                                   Mode=OneWay}"
                 HorizontalScrollBarVisibility="Auto"
                 IsInactiveSelectionHighlightEnabled="True"
                 IsReadOnly="True"
