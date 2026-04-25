@@ -11,6 +11,7 @@ namespace Text_Grab.Utilities;
 public class IoUtilities
 {
     public static readonly List<string> ImageExtensions = [".png", ".bmp", ".jpg", ".jpeg", ".tiff", ".gif", ".tif", ".webp", ".ico"];
+    public static readonly List<string> PdfExtensions = [".pdf"];
     public static readonly List<string> MarkdownExtensions = [".md", ".markdown"];
     public static readonly List<string> SpreadsheetExtensions = [".csv", ".tsv", ".tab"];
 
@@ -28,6 +29,35 @@ public class IoUtilities
             return false;
 
         return ImageExtensions.Contains(extension.ToLowerInvariant());
+    }
+
+    public static bool IsPdfFile(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return false;
+
+        return IsPdfFileExtension(Path.GetExtension(path));
+    }
+
+    public static bool IsPdfFileExtension(string extension)
+    {
+        if (string.IsNullOrWhiteSpace(extension))
+            return false;
+
+        return PdfExtensions.Contains(extension.ToLowerInvariant());
+    }
+
+    public static bool IsVisualDocumentFile(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return false;
+
+        return IsVisualDocumentFileExtension(Path.GetExtension(path));
+    }
+
+    public static bool IsVisualDocumentFileExtension(string extension)
+    {
+        return IsImageFileExtension(extension) || IsPdfFileExtension(extension);
     }
 
     public static bool IsMarkdownFileExtension(string extension)
@@ -59,15 +89,28 @@ public class IoUtilities
         return EtwEditorMode.Text;
     }
 
+    public static OpenContentKind GetOpenContentKindForPath(string? path)
+    {
+        string extension = Path.GetExtension(path ?? string.Empty);
+
+        if (IsPdfFileExtension(extension))
+            return OpenContentKind.PdfDocument;
+
+        if (IsImageFileExtension(extension))
+            return OpenContentKind.Image;
+
+        return OpenContentKind.TextFile;
+    }
+
     public static async Task<(string TextContent, OpenContentKind SourceKindOfContent)> GetContentFromPath(string pathOfFileToOpen, bool isMultipleFiles = false, ILanguage? language = null)
     {
         StringBuilder stringBuilder = new();
-        OpenContentKind openContentKind = OpenContentKind.Image;
+        OpenContentKind openContentKind = GetOpenContentKindForPath(pathOfFileToOpen);
 
         if (isMultipleFiles)
             stringBuilder.AppendLine(pathOfFileToOpen);
 
-        if (ImageExtensions.Contains(Path.GetExtension(pathOfFileToOpen).ToLower()))
+        if (openContentKind is OpenContentKind.Image or OpenContentKind.PdfDocument)
         {
             try
             {

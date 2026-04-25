@@ -540,8 +540,15 @@ public static partial class OcrUtilities
 
     public static async Task<string> OcrAbsoluteFilePathAsync(string absolutePath, ILanguage? language = null)
     {
-        Bitmap bmp = LoadBitmapFromFile(absolutePath);
         language ??= LanguageUtilities.GetCurrentInputLanguage();
+
+        if (IoUtilities.IsPdfFileExtension(Path.GetExtension(absolutePath)))
+        {
+            PdfDocumentRenderer pdfDocument = await PdfDocumentRenderer.LoadAsync(absolutePath);
+            return await pdfDocument.ExtractTextAsync(language);
+        }
+
+        using Bitmap bmp = LoadBitmapFromFile(absolutePath);
         return GetStringFromOcrOutputs(await GetTextFromImageAsync(bmp, language));
     }
 
@@ -657,8 +664,16 @@ public static partial class OcrUtilities
             string ocrText;
             if (options.GrabTemplate is GrabTemplate grabTemplate)
             {
-                Bitmap bmp = LoadBitmapFromFile(path);
-                ocrText = await GrabTemplateExecutor.ExecuteTemplateOnBitmapAsync(grabTemplate, bmp, selectedLanguage);
+                if (IoUtilities.IsPdfFileExtension(Path.GetExtension(path)))
+                {
+                    PdfDocumentRenderer pdfDocument = await PdfDocumentRenderer.LoadAsync(path);
+                    ocrText = await pdfDocument.ExtractTextAsync(selectedLanguage, grabTemplate);
+                }
+                else
+                {
+                    using Bitmap bmp = LoadBitmapFromFile(path);
+                    ocrText = await GrabTemplateExecutor.ExecuteTemplateOnBitmapAsync(grabTemplate, bmp, selectedLanguage);
+                }
             }
             else
                 ocrText = await OcrAbsoluteFilePathAsync(path, selectedLanguage);
