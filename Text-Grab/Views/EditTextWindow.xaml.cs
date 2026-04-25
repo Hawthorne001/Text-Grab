@@ -1,7 +1,7 @@
 using Humanizer;
 using System;
-using System.ComponentModel;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Data;
 using System.Diagnostics;
 using System.Globalization;
@@ -9,7 +9,6 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,8 +33,6 @@ using Text_Grab.Services;
 using Text_Grab.Utilities;
 using Text_Grab.Views;
 using Windows.ApplicationModel.DataTransfer;
-using Windows.Globalization;
-using Windows.Media.Ocr;
 using Windows.Storage;
 using Windows.Storage.Streams;
 using ContextMenu = System.Windows.Controls.ContextMenu;
@@ -584,7 +581,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void CopySpreadsheetRowsMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        List<DataRowView> selectedRows = SpreadsheetDataGrid.SelectedItems.OfType<DataRowView>().ToList();
+        List<DataRowView> selectedRows = [.. SpreadsheetDataGrid.SelectedItems.OfType<DataRowView>()];
 
         if (selectedRows.Count == 0 && SpreadsheetDataGrid.CurrentItem is DataRowView currentRow)
             selectedRows.Add(currentRow);
@@ -1195,13 +1192,12 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ClearSelectedSpreadsheetCellValues()
     {
-        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = SpreadsheetDataGrid.SelectedCells
+        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = [.. SpreadsheetDataGrid.SelectedCells
             .Select(cell => (
                 RowIndex: SpreadsheetDataGrid.Items.IndexOf(cell.Item),
                 ColumnIndex: cell.Column?.DisplayIndex ?? -1))
             .Where(cell => cell.RowIndex >= 0 && cell.ColumnIndex >= 0)
-            .Distinct()
-            .ToList();
+            .Distinct()];
 
         if (selectedCellCoordinates.Count == 0)
             return;
@@ -1327,22 +1323,51 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             SetEditorMode(EtwEditorMode.Markdown);
     }
 
+    private void ToggleMenuItem(MenuItem menuItem, RoutedEventHandler handler)
+    {
+        menuItem.IsChecked = !menuItem.IsChecked;
+        handler(menuItem, new RoutedEventArgs());
+    }
+
+    private void EnterRawTextMode_Click(object sender, RoutedEventArgs e) => SetEditorMode(EtwEditorMode.Text);
+
+    private void EnterSpreadsheetMode_Click(object sender, RoutedEventArgs e) => SetEditorMode(EtwEditorMode.Spreadsheet);
+
+    private void EnterMarkdownMode_Click(object sender, RoutedEventArgs e) => SetEditorMode(EtwEditorMode.Markdown);
+
+    private void ToggleAlwaysOnTop_Click(object sender, RoutedEventArgs e) => ToggleMenuItem(AlwaysOnTop, AlwaysOnTop_Checked);
+
+    private void ToggleHideBottomBar_Click(object sender, RoutedEventArgs e) => ToggleMenuItem(HideBottomBarMenuItem, HideBottomBarMenuItem_Click);
+
+    private void ToggleLaunchFullscreenOnLoad_Click(object sender, RoutedEventArgs e) => ToggleMenuItem(LaunchFullscreenOnLoad, LaunchFullscreenOnLoad_Click);
+
+    private void ToggleRestorePosition_Click(object sender, RoutedEventArgs e) => ToggleMenuItem(RestorePositionMenuItem, RestorePositionMenuItem_Checked);
+
+    private void ToggleMargins_Click(object sender, RoutedEventArgs e) => ToggleMenuItem(MarginsMenuItem, MarginsMenuItem_Checked);
+
+    private void ToggleWrapText_Click(object sender, RoutedEventArgs e) => ToggleMenuItem(WrapTextMenuItem, WrapTextCHBX_Checked);
+
+    private void ToggleShowMathErrors_Click(object sender, RoutedEventArgs e) => ToggleMenuItem(ShowErrorsMenuItem, ShowErrorsMenuItem_Click);
+
+    private void ToggleWriteTxtFileForEachImage_Click(object sender, RoutedEventArgs e)
+    {
+        ReadFolderOfImagesWriteTxtFiles.IsChecked = !ReadFolderOfImagesWriteTxtFiles.IsChecked;
+    }
+
     private void SyncSpreadsheetDocumentFromTable(bool writeText = true)
     {
         tableDocument ??= EditTextTableDocument.CreateFromText(PassedTextControl.Text);
 
-        tableDocument.ColumnNames = spreadsheetTable.Columns
+        tableDocument.ColumnNames = [.. spreadsheetTable.Columns
             .Cast<DataColumn>()
-            .Select(column => column.ColumnName)
-            .ToList();
+            .Select(column => column.ColumnName)];
 
-        tableDocument.Rows = spreadsheetTable.Rows
+        tableDocument.Rows = [.. spreadsheetTable.Rows
             .Cast<DataRow>()
             .Select(row => spreadsheetTable.Columns
                 .Cast<DataColumn>()
                 .Select(column => row[column]?.ToString() ?? string.Empty)
-                .ToList())
-            .ToList();
+                .ToList())];
 
         int furthestNonEmptyRowIndex = -1;
         int furthestNonEmptyColumnIndex = -1;
@@ -2557,7 +2582,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
         bool usingTesseract = DefaultSettings.UseTesseract && TesseractHelper.CanLocateTesseractExe();
         List<ILanguage> availableLanguages = await CaptureLanguageUtilities.GetCaptureLanguagesAsync(usingTesseract);
-        availableLanguages = availableLanguages.Where(CaptureLanguageUtilities.IsStaticImageCompatible).ToList();
+        availableLanguages = [.. availableLanguages.Where(CaptureLanguageUtilities.IsStaticImageCompatible)];
         int selectedIndex = CaptureLanguageUtilities.FindPreferredLanguageIndex(
             availableLanguages,
             DefaultSettings.LastUsedLang,
@@ -4347,8 +4372,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         DetachSpreadsheetColumnWidthTracking();
         System.Windows.DataObject.RemovePastingHandler(MarkdownEditorControl, MarkdownEditorControl_Pasting);
 
-        if (windowSource is not null)
-            windowSource.RemoveHook(EditTextWindowMessageHook);
+        windowSource?.RemoveHook(EditTextWindowMessageHook);
 
         string windowSizeAndPosition = $"{this.Left},{this.Top},{this.Width},{this.Height}";
         DefaultSettings.EditTextWindowSizeAndPosition = windowSizeAndPosition;
@@ -5057,6 +5081,30 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         string systemLanguage = LanguageUtilities.GetSystemLanguageForTranslation();
         await PerformTranslationAsync(systemLanguage);
     }
+
+    private async void TranslateToEnglish_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("English");
+
+    private async void TranslateToSpanish_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Spanish");
+
+    private async void TranslateToFrench_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("French");
+
+    private async void TranslateToGerman_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("German");
+
+    private async void TranslateToItalian_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Italian");
+
+    private async void TranslateToPortuguese_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Portuguese");
+
+    private async void TranslateToRussian_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Russian");
+
+    private async void TranslateToJapanese_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Japanese");
+
+    private async void TranslateToChineseSimplified_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Chinese (Simplified)");
+
+    private async void TranslateToKorean_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Korean");
+
+    private async void TranslateToArabic_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Arabic");
+
+    private async void TranslateToHindi_Click(object sender, RoutedEventArgs e) => await PerformTranslationAsync("Hindi");
 
     private async Task PerformTranslationAsync(string targetLanguage)
     {
