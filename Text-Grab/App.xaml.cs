@@ -240,7 +240,7 @@ public partial class App : System.Windows.Application
             }
             else
             {
-                Debug.WriteLine("--grabframe flag specified but no valid image file path provided");
+                Debug.WriteLine("--grabframe flag specified but no valid image or PDF file path provided");
                 // Fall through to default launch behavior
             }
         }
@@ -318,7 +318,7 @@ public partial class App : System.Windows.Application
                 false,
                 false);
         }
-        else if (IoUtilities.IsImageFile(possiblePath))
+        else if (IoUtilities.IsVisualDocumentFile(possiblePath))
         {
             GrabFrame gf = new(possiblePath);
             gf.Show();
