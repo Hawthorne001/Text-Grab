@@ -44,9 +44,14 @@ public class HistoryInfo : IEquatable<HistoryInfo>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool UsedUiAutomation { get; set; }
 
-    public bool HasCalcPaneOpen { get; set; } = false;
+     public bool HasCalcPaneOpen { get; set; } = false;
 
-    public int CalcPaneWidth { get; set; } = 0;
+     public int CalcPaneWidth { get; set; } = 0;
+
+    public EtwEditorMode EditorMode { get; set; } = EtwEditorMode.Text;
+
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? EditTextTableDocumentJson { get; set; }
 
     [JsonIgnore]
     public ILanguage OcrLanguage
