@@ -107,4 +107,33 @@ public class FilesIoTests
     {
         Assert.Equal(expectedMode, IoUtilities.GetEditorModeForPath(path));
     }
+
+    [Theory]
+    [InlineData(@"C:\Temp\scan.png", OpenContentKind.Image)]
+    [InlineData(@"C:\Temp\scan.PDF", OpenContentKind.PdfDocument)]
+    [InlineData(@"C:\Temp\notes.txt", OpenContentKind.TextFile)]
+    public void GetOpenContentKindForPath_ClassifiesVisualDocumentsAndText(string path, OpenContentKind expectedKind)
+    {
+        Assert.Equal(expectedKind, IoUtilities.GetOpenContentKindForPath(path));
+    }
+
+    [Theory]
+    [InlineData(".png", true)]
+    [InlineData(".PDF", true)]
+    [InlineData(".txt", false)]
+    [InlineData("", false)]
+    public void IsVisualDocumentFileExtension_RecognizesImagesAndPdf(string extension, bool expected)
+    {
+        Assert.Equal(expected, IoUtilities.IsVisualDocumentFileExtension(extension));
+    }
+
+    [Fact]
+    public void GetVisualDocumentFilter_IncludesPdfSupport()
+    {
+        string filter = FileUtilities.GetVisualDocumentFilter();
+
+        Assert.Contains("Image and PDF files|", filter);
+        Assert.Contains("PDF files|*.pdf", filter);
+        Assert.Contains("Image files|", filter);
+    }
 }
