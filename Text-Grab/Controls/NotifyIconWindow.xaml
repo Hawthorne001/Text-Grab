@@ -38,6 +38,14 @@
                     </MenuItem>
                     <Separator />
                     <MenuItem
+                        x:Name="OpenFileMenuItem"
+                        Click="OpenFileMenuItem_Click"
+                        Header="Open File...">
+                        <MenuItem.Icon>
+                            <wpfui:SymbolIcon Symbol="Document24" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem
                         x:Name="OpenClipboardImageGrabFrame"
                         Click="OpenClipboardImageGrabFrame_Click"
                         Header="Paste in Grab Frame"

@@ -70,6 +70,11 @@ public partial class NotifyIconWindow : Window
         etw.Activate();
     }
 
+    private async void OpenFileMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        await App.OpenFileWithPickerAsync();
+    }
+
     private void GrabFrameMenuItem_Click(object sender, RoutedEventArgs e)
     {
         GrabFrame gf = new();
