@@ -1,4 +1,6 @@
-﻿using System.Drawing;
+using System.Drawing;
+using System.IO;
+using System.Windows;
 using Text_Grab;
 using Text_Grab.Models;
 using Text_Grab.Utilities;
@@ -135,5 +137,63 @@ public class FilesIoTests
         Assert.Contains("Image and PDF files|", filter);
         Assert.Contains("PDF files|*.pdf", filter);
         Assert.Contains("Image files|", filter);
+    }
+
+    [Fact]
+    public void GetOpenDocumentFilter_IncludesVisualAndTextOptions()
+    {
+        string filter = FileUtilities.GetOpenDocumentFilter();
+
+        Assert.Contains("Supported documents|", filter);
+        Assert.Contains("Image and PDF files|", filter);
+        Assert.Contains("Spreadsheet documents|*.csv;*.tsv;*.tab", filter);
+        Assert.Contains("Markdown documents|*.md;*.markdown", filter);
+        Assert.Contains("Text documents (*.txt)|*.txt", filter);
+        Assert.Contains("All files (*.*)|*.*", filter);
+    }
+
+    [WpfFact]
+    public void GetDroppedFilePaths_ReturnsExistingFilesOnly()
+    {
+        string firstPath = Path.GetTempFileName();
+        string secondPath = Path.GetTempFileName();
+        string missingPath = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid()}.txt");
+        DataObject dataObject = new(DataFormats.FileDrop, new[] { firstPath, missingPath, secondPath });
+
+        try
+        {
+            IReadOnlyList<string> paths = App.GetDroppedFilePaths(dataObject);
+
+            Assert.Equal([firstPath, secondPath], paths);
+        }
+        finally
+        {
+            File.Delete(firstPath);
+            File.Delete(secondPath);
+        }
+    }
+
+    [WpfFact]
+    public void GetDroppedFileEffect_ReturnsCopyWhenExistingFilesAreDropped()
+    {
+        string path = Path.GetTempFileName();
+        DataObject dataObject = new(DataFormats.FileDrop, new[] { path });
+
+        try
+        {
+            Assert.Equal(DragDropEffects.Copy, App.GetDroppedFileEffect(dataObject));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [WpfFact]
+    public void GetDroppedFileEffect_ReturnsNoneWhenNoFilesCanBeOpened()
+    {
+        DataObject dataObject = new(DataFormats.Text, "hello");
+
+        Assert.Equal(DragDropEffects.None, App.GetDroppedFileEffect(dataObject));
     }
 }
