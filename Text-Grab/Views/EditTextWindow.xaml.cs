@@ -50,7 +50,6 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private const double SpreadsheetDefaultColumnWidth = 120;
     private const double HorizontalWheelScrollStep = 48;
     private const int WmMouseHWheel = 0x020E;
-    private const string OpenDocumentFilter = "Supported documents (*.pdf;*.csv;*.tsv;*.tab;*.md;*.markdown;*.txt)|*.pdf;*.csv;*.tsv;*.tab;*.md;*.markdown;*.txt|PDF documents (*.pdf)|*.pdf|Spreadsheet documents (*.csv;*.tsv;*.tab)|*.csv;*.tsv;*.tab|Markdown documents (*.md;*.markdown)|*.md;*.markdown|Text documents (*.txt)|*.txt|All files (*.*)|*.*";
     private const string SaveDocumentFilter = "Spreadsheet documents (*.csv;*.tsv;*.tab)|*.csv;*.tsv;*.tab|Markdown documents (*.md;*.markdown)|*.md;*.markdown|Text documents (*.txt)|*.txt|All files (*.*)|*.*";
     #region Fields
 
@@ -3084,7 +3083,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         {
             // Set filter for file extension and default file extension 
             DefaultExt = ".txt",
-            Filter = OpenDocumentFilter,
+            Filter = FileUtilities.GetOpenDocumentFilter(),
             DefaultDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
         };
 

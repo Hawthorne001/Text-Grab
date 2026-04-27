@@ -68,6 +68,7 @@ public partial class GrabFrame : Window
     private bool isSearchSelectionOverridden = false;
     private bool isSelecting;
     private bool isSpaceJoining = true;
+    private bool isSpacePanModifierDown = false;
     private bool isStaticImageSource = false;
     private readonly Dictionary<WordBorder, Rect> movingWordBordersDictionary = [];
     private IOcrLinesWords? ocrResultOfWindow;
@@ -554,7 +555,8 @@ public partial class GrabFrame : Window
         _loadedPdfDocument = null;
         _currentPdfPageContent = null;
         _currentPdfPageIndex = -1;
-        MainZoomBorder.RequireSpaceToPan = false;
+        SetSpacePanModifierState(false);
+        UpdateZoomPanMode();
         UpdatePdfPageNavigation();
     }
 
@@ -590,7 +592,6 @@ public partial class GrabFrame : Window
         FreezeToggleButton.IsChecked = true;
         FreezeGrabFrame();
         FreezeToggleButton.Visibility = Visibility.Collapsed;
-        MainZoomBorder.RequireSpaceToPan = true;
         UpdatePdfPageNavigation();
         SwitchToOcrFallbackIfUiAutomation();
 
@@ -713,12 +714,31 @@ public partial class GrabFrame : Window
 
     private bool IsPdfTextInteraction(object? sender) => ReferenceEquals(sender, PdfTextCanvas);
 
-    private bool IsPdfPanGestureActive =>
-        IsPdfDocumentLoaded
-        && MainZoomBorder.CanPan
+    private bool IsZoomPanGestureActive =>
+        MainZoomBorder.CanPan
         && !KeyboardExtensions.IsShiftDown()
         && !KeyboardExtensions.IsCtrlDown()
-        && Keyboard.IsKeyDown(Key.Space);
+        && (!MainZoomBorder.RequireSpaceToPan || isSpacePanModifierDown || Keyboard.IsKeyDown(Key.Space));
+
+    private bool CanUseSpacePanModifier =>
+        MainZoomBorder.RequireSpaceToPan
+        && MainZoomBorder.CanPan
+        && !IsEditingAnyWordBorders
+        && Keyboard.FocusedElement is not TextBox and not RichTextBox;
+
+    private void SetSpacePanModifierState(bool isDown)
+    {
+        isSpacePanModifierDown = isDown;
+        MainZoomBorder.IsSpacePanModifierPressed = isDown;
+    }
+
+    private void UpdateZoomPanMode()
+    {
+        MainZoomBorder.RequireSpaceToPan = IsFreezeMode;
+
+        if (!MainZoomBorder.RequireSpaceToPan)
+            SetSpacePanModifierState(false);
+    }
 
     public HistoryInfo AsHistoryItem()
     {
@@ -1985,6 +2005,7 @@ public partial class GrabFrame : Window
         Background = new SolidColorBrush(Colors.DimGray);
         RectanglesBorder.Background.Opacity = 0;
         IsFreezeMode = true;
+        UpdateZoomPanMode();
 
         if (scrollBehavior == ScrollBehavior.ZoomWhenFrozen)
             MainZoomBorder.CanZoom = true;
@@ -2200,6 +2221,8 @@ public partial class GrabFrame : Window
 
     private void GrabFrameWindow_Deactivated(object? sender, EventArgs e)
     {
+        SetSpacePanModifierState(false);
+
         if (!IsWordEditMode && !IsFreezeMode)
         {
             ResetGrabFrame();
@@ -2667,8 +2690,8 @@ public partial class GrabFrame : Window
             }
 
             bool shouldPanInsteadOfSelect = IsPdfDocumentLoaded
-                ? IsPdfPanGestureActive
-                : !KeyboardExtensions.IsShiftDown() && !KeyboardExtensions.IsCtrlDown() && !isPdfTextInteraction;
+                ? IsZoomPanGestureActive
+                : IsZoomPanGestureActive && !isPdfTextInteraction;
 
             if (shouldPanInsteadOfSelect)
                 return;
@@ -2717,9 +2740,9 @@ public partial class GrabFrame : Window
         if (IsCtrlDown)
             interactionSurface.Cursor = Cursors.Cross;
         else if (MainZoomBorder.CanPan)
-            interactionSurface.Cursor = IsPdfDocumentLoaded
-                ? (IsPdfPanGestureActive ? Cursors.SizeAll : Cursors.Arrow)
-                : (isPdfTextInteraction ? Cursors.Arrow : Cursors.SizeAll);
+            interactionSurface.Cursor = (IsPdfDocumentLoaded || !isPdfTextInteraction) && IsZoomPanGestureActive
+                ? Cursors.SizeAll
+                : Cursors.Arrow;
         else
             interactionSurface.Cursor = null;
 
@@ -2730,10 +2753,8 @@ public partial class GrabFrame : Window
 
         if (MainZoomBorder.CanPan
             && (IsPdfDocumentLoaded
-                ? IsPdfPanGestureActive
-                : (!KeyboardExtensions.IsShiftDown()
-                    && !KeyboardExtensions.IsCtrlDown()
-                    && !isPdfTextInteraction)))
+                ? IsZoomPanGestureActive
+                : (IsZoomPanGestureActive && !isPdfTextInteraction)))
         {
             isSelecting = false;
             return;
@@ -3761,6 +3782,7 @@ new GrabFrameOperationArgs()
         FreezeToggleButton.Visibility = Visibility.Visible;
         Background = new SolidColorBrush(Colors.Transparent);
         IsFreezeMode = false;
+        UpdateZoomPanMode();
 
         if (scrollBehavior == ScrollBehavior.ZoomWhenFrozen)
             MainZoomBorder.CanZoom = false;
@@ -3898,6 +3920,13 @@ new GrabFrameOperationArgs()
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Space && CanUseSpacePanModifier)
+        {
+            SetSpacePanModifierState(true);
+            e.Handled = true;
+            return;
+        }
+
         if (!wasAltHeld && (e.SystemKey == Key.LeftAlt || e.SystemKey == Key.RightAlt))
         {
             RectanglesCanvas.Opacity = 0.1;
@@ -3923,6 +3952,17 @@ new GrabFrameOperationArgs()
 
     private void Window_PreviewKeyUp(object sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Space)
+        {
+            SetSpacePanModifierState(false);
+
+            if (CanUseSpacePanModifier)
+            {
+                e.Handled = true;
+                return;
+            }
+        }
+
         if (wasAltHeld && (e.SystemKey == Key.LeftAlt || e.SystemKey == Key.RightAlt))
         {
             RectanglesCanvas.Opacity = 1;

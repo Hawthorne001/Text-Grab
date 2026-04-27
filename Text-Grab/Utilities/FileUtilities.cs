@@ -38,9 +38,8 @@ public class FileUtilities
 
     public static string GetVisualDocumentFilter()
     {
-        string imageExtensions = GetImageExtensionsFilterPattern();
-        string pdfExtensions = string.Join(";", IoUtilities.PdfExtensions.Select(extension => $"*{extension}"));
-        string combinedExtensions = string.Join(";", new[] { imageExtensions, pdfExtensions }.Where(pattern => !string.IsNullOrWhiteSpace(pattern)));
+        string pdfExtensions = GetExtensionsFilterPattern(IoUtilities.PdfExtensions);
+        string combinedExtensions = GetVisualDocumentFilterPattern();
         string imageFilter = GetImageFilter();
 
         return string.Join("|", new[]
@@ -48,6 +47,29 @@ public class FileUtilities
             $"Image and PDF files|{combinedExtensions}",
             $"PDF files|{pdfExtensions}",
             imageFilter
+        });
+    }
+
+    public static string GetOpenDocumentFilter()
+    {
+        string spreadsheetExtensions = GetExtensionsFilterPattern(IoUtilities.SpreadsheetExtensions);
+        string markdownExtensions = GetExtensionsFilterPattern(IoUtilities.MarkdownExtensions);
+        string supportedExtensions = string.Join(";", new[]
+        {
+            GetVisualDocumentFilterPattern(),
+            spreadsheetExtensions,
+            markdownExtensions,
+            "*.txt"
+        }.Where(pattern => !string.IsNullOrWhiteSpace(pattern)));
+
+        return string.Join("|", new[]
+        {
+            $"Supported documents|{supportedExtensions}",
+            GetVisualDocumentFilter(),
+            $"Spreadsheet documents|{spreadsheetExtensions}",
+            $"Markdown documents|{markdownExtensions}",
+            "Text documents (*.txt)|*.txt",
+            "All files (*.*)|*.*"
         });
     }
 
@@ -114,6 +136,20 @@ public class FileUtilities
         }
 
         return imageExtensions;
+    }
+
+    private static string GetExtensionsFilterPattern(IEnumerable<string> extensions)
+    {
+        return string.Join(";", extensions.Select(extension => $"*{extension}"));
+    }
+
+    private static string GetVisualDocumentFilterPattern()
+    {
+        return string.Join(";", new[]
+        {
+            GetImageExtensionsFilterPattern(),
+            GetExtensionsFilterPattern(IoUtilities.PdfExtensions)
+        }.Where(pattern => !string.IsNullOrWhiteSpace(pattern)));
     }
 
     private static async Task<Bitmap?> GetImageFilePackaged(string fileName, FileStorageKind storageKind)
