@@ -16,6 +16,7 @@ namespace Text_Grab.Controls;
 public class ZoomBorder : Border
 {
     private UIElement? child = null;
+    private bool isPanning = false;
     private Point origin;
     private Point start;
 
@@ -42,6 +43,8 @@ public class ZoomBorder : Border
 
     public bool CanZoom { get; set; } = true;
 
+    public bool IsSpacePanModifierPressed { get; set; } = false;
+
     public bool RequireSpaceToPan { get; set; } = false;
 
     public void Initialize(UIElement element)
@@ -58,18 +61,9 @@ public class ZoomBorder : Border
         child.RenderTransform = group;
         child.RenderTransformOrigin = new Point(0.0, 0.0);
         MouseWheel += Child_MouseWheel;
-        MouseLeftButtonDown += Child_MouseLeftButtonDown;
-        MouseLeftButtonUp += Child_MouseLeftButtonUp;
-        PreviewMouseDown += ZoomBorder_PreviewMouseDown;
-        MouseMove += Child_MouseMove;
-        PreviewMouseRightButtonDown += new MouseButtonEventHandler(
-          Child_PreviewMouseRightButtonDown);
-    }
-
-    private void ZoomBorder_PreviewMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.MiddleButton == MouseButtonState.Pressed)
-            Reset();
+        AddHandler(Mouse.PreviewMouseDownEvent, new MouseButtonEventHandler(Child_PreviewMouseDown), true);
+        AddHandler(Mouse.PreviewMouseUpEvent, new MouseButtonEventHandler(Child_PreviewMouseUp), true);
+        AddHandler(Mouse.PreviewMouseMoveEvent, new MouseEventHandler(Child_MouseMove), true);
     }
 
     public void Reset()
@@ -87,10 +81,14 @@ public class ZoomBorder : Border
         tt.X = 0.0;
         tt.Y = 0.0;
 
+        isPanning = false;
+        ReleaseMouseCapture();
+        Cursor = Cursors.Arrow;
         CanPan = false;
     }
 
-    private bool IsPanGestureActive() => !RequireSpaceToPan || Keyboard.IsKeyDown(Key.Space);
+    private bool IsPanGestureActive() =>
+        !RequireSpaceToPan || IsSpacePanModifierPressed || Keyboard.IsKeyDown(Key.Space);
 
     private bool BlocksPanFromSource(object? originalSource)
     {
@@ -148,46 +146,66 @@ public class ZoomBorder : Border
         CanPan = true;
     }
 
-    private void Child_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void Child_PreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (child is null || !IsPanGestureActive() || BlocksPanFromSource(e.OriginalSource))
+        if (e.ChangedButton == MouseButton.Middle)
+        {
+            Reset();
+            e.Handled = true;
             return;
+        }
 
-        TranslateTransform tt = GetTranslateTransform(child);
-        start = e.GetPosition(this);
-        origin = new Point(tt.X, tt.Y);
-        Cursor = Cursors.Hand;
-        // child.CaptureMouse();
-    }
-
-    private void Child_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        if (child is null)
-            return;
-
-        child.ReleaseMouseCapture();
-        Cursor = Cursors.Arrow;
-    }
-
-    private void Child_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
-    {
-    }
-
-    private void Child_MouseMove(object sender, MouseEventArgs e)
-    {
-        if (BlocksPanFromSource(e.OriginalSource))
+        if (e.ChangedButton != MouseButton.Left)
             return;
 
         if (child is null
             || GetScaleTransform(child) is not ScaleTransform st
             || st.ScaleX == 1.0
-            || Mouse.LeftButton == MouseButtonState.Released
+            || !CanPan
+            || !IsPanGestureActive()
+            || BlocksPanFromSource(e.OriginalSource))
+            return;
+
+        TranslateTransform tt = GetTranslateTransform(child);
+        start = e.GetPosition(this);
+        origin = new Point(tt.X, tt.Y);
+
+        if (!CaptureMouse())
+            return;
+
+        isPanning = true;
+        Cursor = Cursors.Hand;
+        e.Handled = true;
+    }
+
+    private void Child_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || child is null || !isPanning)
+            return;
+
+        isPanning = false;
+        ReleaseMouseCapture();
+        Cursor = Cursors.Arrow;
+        e.Handled = true;
+    }
+
+    private void Child_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!isPanning && BlocksPanFromSource(e.OriginalSource))
+            return;
+
+        if (child is null
+            || GetScaleTransform(child) is not ScaleTransform st
+            || st.ScaleX == 1.0
+            || !isPanning
             || !CanPan
             || !IsPanGestureActive()
             || KeyboardExtensions.IsShiftDown()
             || KeyboardExtensions.IsCtrlDown())
         {
-            child?.ReleaseMouseCapture();
+            isPanning = false;
+            ReleaseMouseCapture();
+            Cursor = Cursors.Arrow;
             return;
         }
 
@@ -195,5 +213,6 @@ public class ZoomBorder : Border
         Vector v = start - e.GetPosition(this);
         tt.X = origin.X - v.X;
         tt.Y = origin.Y - v.Y;
+        e.Handled = true;
     }
 }
