@@ -69,6 +69,7 @@ public partial class GrabFrame : Window
     private bool isSelecting;
     private bool isSpaceJoining = true;
     private bool isSpacePanModifierDown = false;
+    private DispatcherTimer? _spacePanGraceTimer;
     private bool isStaticImageSource = false;
     private readonly Dictionary<WordBorder, Rect> movingWordBordersDictionary = [];
     private IOcrLinesWords? ocrResultOfWindow;
@@ -557,6 +558,7 @@ public partial class GrabFrame : Window
         _currentPdfPageIndex = -1;
         SetSpacePanModifierState(false);
         UpdateZoomPanMode();
+        SetScrollBehaviorMenuItems();
         UpdatePdfPageNavigation();
     }
 
@@ -591,6 +593,7 @@ public partial class GrabFrame : Window
         _currentPdfPageIndex = pageIndex;
         FreezeToggleButton.IsChecked = true;
         FreezeGrabFrame();
+        MainZoomBorder.CanZoom = true;
         FreezeToggleButton.Visibility = Visibility.Collapsed;
         UpdatePdfPageNavigation();
         SwitchToOcrFallbackIfUiAutomation();
@@ -732,12 +735,15 @@ public partial class GrabFrame : Window
         MainZoomBorder.IsSpacePanModifierPressed = isDown;
     }
 
+    private void MoveKeyboardFocusFromButtonBase()
+    {
+        if (MainZoomBorder.CanPan && Keyboard.FocusedElement is ButtonBase)
+            RectanglesCanvas.Focus();
+    }
+
     private void UpdateZoomPanMode()
     {
-        MainZoomBorder.RequireSpaceToPan = IsFreezeMode;
-
-        if (!MainZoomBorder.RequireSpaceToPan)
-            SetSpacePanModifierState(false);
+        MainZoomBorder.RequireSpaceToPan = true;
     }
 
     public HistoryInfo AsHistoryItem()
@@ -2221,6 +2227,8 @@ public partial class GrabFrame : Window
 
     private void GrabFrameWindow_Deactivated(object? sender, EventArgs e)
     {
+        _spacePanGraceTimer?.Stop();
+        _spacePanGraceTimer = null;
         SetSpacePanModifierState(false);
 
         if (!IsWordEditMode && !IsFreezeMode)
@@ -2368,6 +2376,14 @@ public partial class GrabFrame : Window
 
         if (scrollBehavior == ScrollBehavior.ZoomWhenFrozen && IsFreezeMode)
             return; // ZoomBorder handles scroll when frozen
+
+        if (IsPdfDocumentLoaded)
+        {
+            // ZoomBorder handles the scroll and sets CanPan=true synchronously after we return.
+            // Defer a focus check so ButtonBase never holds focus while panning is possible.
+            Dispatcher.InvokeAsync(MoveKeyboardFocusFromButtonBase, DispatcherPriority.Input);
+            return;
+        }
 
         e.Handled = true;
         double aspectRatio = (Height - 66) / (Width - 4);
@@ -2673,7 +2689,8 @@ public partial class GrabFrame : Window
             : (GetInteractionSurface(sender) ?? RectanglesCanvas);
 
         reDrawTimer.Stop();
-        GrabBTN.Focus();
+        if (!MainZoomBorder.CanPan)
+            GrabBTN.Focus();
 
         if (e.RightButton == MouseButtonState.Pressed)
         {
@@ -3920,11 +3937,17 @@ new GrabFrameOperationArgs()
 
     private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Space && CanUseSpacePanModifier)
+        if (e.Key == Key.Space)
         {
-            SetSpacePanModifierState(true);
-            e.Handled = true;
-            return;
+            // Cancel any pending grace-period clear when Space is pressed
+            _spacePanGraceTimer?.Stop();
+            _spacePanGraceTimer = null;
+            if (CanUseSpacePanModifier)
+            {
+                SetSpacePanModifierState(true);
+                e.Handled = true;
+                return;
+            }
         }
 
         if (!wasAltHeld && (e.SystemKey == Key.LeftAlt || e.SystemKey == Key.RightAlt))
@@ -3954,7 +3977,19 @@ new GrabFrameOperationArgs()
     {
         if (e.Key == Key.Space)
         {
-            SetSpacePanModifierState(false);
+            // Keep the pan modifier active for a short grace period after Space is released.
+            // Users commonly release Space a split-second before clicking to start a pan,
+            // so clearing immediately makes the gesture feel broken.
+            _spacePanGraceTimer?.Stop();
+            _spacePanGraceTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _spacePanGraceTimer.Tick += (_, _) =>
+            {
+                _spacePanGraceTimer?.Stop();
+                _spacePanGraceTimer = null;
+                if (!Keyboard.IsKeyDown(Key.Space))
+                    SetSpacePanModifierState(false);
+            };
+            _spacePanGraceTimer.Start();
 
             if (CanUseSpacePanModifier)
             {
@@ -4165,6 +4200,9 @@ new GrabFrameOperationArgs()
             default:
                 break;
         }
+
+        if (IsPdfDocumentLoaded)
+            MainZoomBorder.CanZoom = true;
     }
 
     private void InvertColorsMI_Click(object sender, RoutedEventArgs e)

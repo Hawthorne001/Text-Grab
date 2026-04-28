@@ -1,11 +1,11 @@
-﻿using System.Linq;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
 
-// From StackOverFlow: 
+// From StackOverFlow:
 // https://stackoverflow.com/questions/741956/pan-zoom-image
 // Answered by https://stackoverflow.com/users/282801/wies%c5%82aw-%c5%a0olt%c3%a9s
 // Read on 2024-05-02
@@ -164,13 +164,16 @@ public class ZoomBorder : Border
             || !CanPan
             || !IsPanGestureActive()
             || BlocksPanFromSource(e.OriginalSource))
+        {
             return;
+        }
 
         TranslateTransform tt = GetTranslateTransform(child);
         start = e.GetPosition(this);
         origin = new Point(tt.X, tt.Y);
 
-        if (!CaptureMouse())
+        bool captured = CaptureMouse();
+        if (!captured)
             return;
 
         isPanning = true;
@@ -199,7 +202,6 @@ public class ZoomBorder : Border
             || st.ScaleX == 1.0
             || !isPanning
             || !CanPan
-            || !IsPanGestureActive()
             || KeyboardExtensions.IsShiftDown()
             || KeyboardExtensions.IsCtrlDown())
         {
