@@ -3637,9 +3637,11 @@ new GrabFrameOperationArgs()
         UndoRedo.EndTransaction();
     }
 
-    private void TryToPlaceTable()
+    private List<WordBorderInfo> TryToPlaceTable()
     {
         RemoveTableLines();
+
+        List<WordBorderInfo> wbInfos = [.. wordBorders.Select(wb => new WordBorderInfo(wb))];
 
         Point windowPosition = this.GetAbsolutePosition();
         DpiScale dpi = VisualTreeHelper.GetDpi(this);
@@ -3654,8 +3656,6 @@ new GrabFrameOperationArgs()
         try
         {
             AnalyzedResultTable = new();
-            // Convert UI controls to model-only infos
-            List<WordBorderInfo> wbInfos = [.. wordBorders.Select(wb => new WordBorderInfo(wb))];
             AnalyzedResultTable.AnalyzeAsTable(wbInfos, rectCanvasSize);
             if (AnalyzedResultTable.TableLines is not null)
                 RectanglesCanvas.Children.Add(AnalyzedResultTable.TableLines);
@@ -3664,6 +3664,8 @@ new GrabFrameOperationArgs()
         {
             Debug.WriteLine(ex.Message);
         }
+
+        return wbInfos;
     }
 
     private void TryToReadBarcodes(DpiScale dpi)
@@ -3865,9 +3867,7 @@ new GrabFrameOperationArgs()
 
         if (TableToggleButton.IsChecked is true && wordBorders.Count > 0)
         {
-            TryToPlaceTable();
-            // Build table text via model-only API
-            List<WordBorderInfo> infos = [.. wordBorders.Select(wb => new WordBorderInfo(wb))];
+            List<WordBorderInfo> infos = TryToPlaceTable();
             ResultTable.GetTextFromTabledWordBorders(stringBuilder, infos, isSpaceJoining);
         }
         else
