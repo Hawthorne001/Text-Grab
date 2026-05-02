@@ -170,11 +170,12 @@ internal sealed class PdfDocumentRenderer : IDisposable
             return pageContent.NativeLines;
 
         List<PdfPageTextLine> combinedLines = [.. pageContent.NativeLines];
+        IReadOnlyList<Windows.Foundation.Rect> nativeRects = [.. pageContent.NativeLines.Select(l => l.SourceRect)];
         IReadOnlyList<PdfPageTextLine> imageOcrLines = await GetOcrLinesAsync(
             pageContent.RenderedPage,
             resolvedLanguage,
             sourceRect => ShouldIncludeOcrLine(sourceRect, pageContent.ImageRegions)
-                       && !ShouldIncludeOcrLine(sourceRect, pageContent.NativeLines.Select(l => l.SourceRect).ToList()));
+                       && !ShouldIncludeOcrLine(sourceRect, nativeRects));
 
         combinedLines.AddRange(imageOcrLines);
         return SortLines(combinedLines);
