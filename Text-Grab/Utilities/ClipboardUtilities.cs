@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -222,8 +223,11 @@ public class ClipboardUtilities
         tableEnd = tableEnd >= 0 ? tableEnd + 8 : html.Length;
 
         string tableHtml = html[tableStart..tableEnd];
-        int pos = 0;
 
+        // Tracks cells that span into future rows: col -> (remaining rows to fill, cell content)
+        Dictionary<int, (int RemainingRows, string Content)> rowspanMap = [];
+
+        int pos = 0;
         while (pos < tableHtml.Length)
         {
             int rowStart = tableHtml.IndexOf("<tr", pos, StringComparison.OrdinalIgnoreCase);
@@ -232,9 +236,52 @@ public class ClipboardUtilities
             int rowEnd = tableHtml.IndexOf("</tr>", rowStart, StringComparison.OrdinalIgnoreCase);
             rowEnd = rowEnd >= 0 ? rowEnd + 5 : tableHtml.Length;
 
-            List<string> cells = ParseHtmlRowCells(tableHtml[rowStart..rowEnd]);
-            if (cells.Count > 0)
-                result.Add(cells);
+            List<(string Text, int ColSpan, int RowSpan)> parsedCells =
+                ParseHtmlRowCells(tableHtml[rowStart..rowEnd]);
+
+            if (parsedCells.Count > 0 || rowspanMap.Count > 0)
+            {
+                // Build a sparse column map for this row
+                Dictionary<int, string> rowData = [];
+
+                // Apply rowspan carry-overs from previous rows first
+                foreach (int col in rowspanMap.Keys.OrderBy(k => k).ToList())
+                {
+                    (int rem, string content) = rowspanMap[col];
+                    rowData[col] = content;
+                    if (rem > 1)
+                        rowspanMap[col] = (rem - 1, content);
+                    else
+                        rowspanMap.Remove(col);
+                }
+
+                // Place each parsed cell in the next free column(s)
+                int nextFreeCol = 0;
+                foreach ((string text, int colspan, int rowspan) in parsedCells)
+                {
+                    // Advance past columns already occupied by rowspan carry-overs
+                    while (rowData.ContainsKey(nextFreeCol))
+                        nextFreeCol++;
+
+                    for (int cs = 0; cs < colspan; cs++)
+                        rowData[nextFreeCol + cs] = text;
+
+                    if (rowspan > 1)
+                        for (int cs = 0; cs < colspan; cs++)
+                            rowspanMap[nextFreeCol + cs] = (rowspan - 1, text);
+
+                    nextFreeCol += colspan;
+                }
+
+                if (rowData.Count > 0)
+                {
+                    int colCount = rowData.Keys.Max() + 1;
+                    List<string> row = [];
+                    for (int c = 0; c < colCount; c++)
+                        row.Add(rowData.TryGetValue(c, out string? cell) ? cell : string.Empty);
+                    result.Add(row);
+                }
+            }
 
             pos = rowEnd;
         }
@@ -242,9 +289,9 @@ public class ClipboardUtilities
         return result;
     }
 
-    private static List<string> ParseHtmlRowCells(string rowHtml)
+    private static List<(string Text, int ColSpan, int RowSpan)> ParseHtmlRowCells(string rowHtml)
     {
-        List<string> cells = [];
+        List<(string, int, int)> cells = [];
         int pos = 0;
 
         while (pos < rowHtml.Length)
@@ -270,15 +317,40 @@ public class ClipboardUtilities
             int openEnd = rowHtml.IndexOf('>', cellStart);
             if (openEnd < 0) break;
 
+            string tagAttributes = rowHtml[(cellStart + 3)..openEnd];
+            int colspan = ParseSpanAttribute(tagAttributes, "colspan");
+            int rowspan = ParseSpanAttribute(tagAttributes, "rowspan");
+
             int contentStart = openEnd + 1;
             int contentEnd = rowHtml.IndexOf(endTag, contentStart, StringComparison.OrdinalIgnoreCase);
             contentEnd = contentEnd >= 0 ? contentEnd : rowHtml.Length;
 
-            cells.Add(CleanHtmlCellContent(rowHtml[contentStart..contentEnd]));
+            cells.Add((CleanHtmlCellContent(rowHtml[contentStart..contentEnd]), colspan, rowspan));
             pos = contentEnd + endTag.Length;
         }
 
         return cells;
+    }
+
+    private static int ParseSpanAttribute(string tagAttributes, string attributeName)
+    {
+        int attrPos = tagAttributes.IndexOf(attributeName, StringComparison.OrdinalIgnoreCase);
+        if (attrPos < 0) return 1;
+
+        int eqPos = tagAttributes.IndexOf('=', attrPos + attributeName.Length);
+        if (eqPos < 0) return 1;
+
+        int valueStart = eqPos + 1;
+        while (valueStart < tagAttributes.Length && tagAttributes[valueStart] is ' ' or '"' or '\'')
+            valueStart++;
+
+        int valueEnd = valueStart;
+        while (valueEnd < tagAttributes.Length && char.IsDigit(tagAttributes[valueEnd]))
+            valueEnd++;
+
+        if (valueEnd == valueStart) return 1;
+
+        return int.TryParse(tagAttributes[valueStart..valueEnd], out int span) && span >= 1 ? span : 1;
     }
 
     private static string CleanHtmlCellContent(string html)

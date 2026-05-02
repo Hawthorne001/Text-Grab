@@ -544,7 +544,7 @@ public static partial class OcrUtilities
 
         if (IoUtilities.IsPdfFileExtension(Path.GetExtension(absolutePath)))
         {
-            PdfDocumentRenderer pdfDocument = await PdfDocumentRenderer.LoadAsync(absolutePath);
+            using PdfDocumentRenderer pdfDocument = await PdfDocumentRenderer.LoadAsync(absolutePath);
             return await pdfDocument.ExtractTextAsync(language);
         }
 
@@ -666,7 +666,7 @@ public static partial class OcrUtilities
             {
                 if (IoUtilities.IsPdfFileExtension(Path.GetExtension(path)))
                 {
-                    PdfDocumentRenderer pdfDocument = await PdfDocumentRenderer.LoadAsync(path);
+                    using PdfDocumentRenderer pdfDocument = await PdfDocumentRenderer.LoadAsync(path);
                     ocrText = await pdfDocument.ExtractTextAsync(selectedLanguage, grabTemplate);
                 }
                 else

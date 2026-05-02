@@ -98,6 +98,7 @@ public partial class GrabFrame : Window
     private int translatedWordsCount = 0;
     private CancellationTokenSource? translationCancellationTokenSource;
     private readonly List<PdfTextLineOverlay> pdfTextLineOverlays = [];
+    private CancellationTokenSource? _pdfPageNavCts;
     private const string TargetLanguageMenuHeader = "Target Language";
 
     #endregion Fields
@@ -552,6 +553,9 @@ public partial class GrabFrame : Window
 
     private void ClearLoadedPdfDocument()
     {
+        _pdfPageNavCts?.Cancel();
+        _pdfPageNavCts?.Dispose();
+        _pdfPageNavCts = null;
         _loadedPdfDocument?.Dispose();
         _loadedPdfDocument = null;
         _currentPdfPageContent = null;
@@ -579,26 +583,42 @@ public partial class GrabFrame : Window
         if (_loadedPdfDocument is null)
             return;
 
-        reDrawTimer.Stop();
-        ResetGrabFrame();
-        await Task.Delay(300);
+        CancellationTokenSource? previousCts = _pdfPageNavCts;
+        _pdfPageNavCts = new CancellationTokenSource();
+        CancellationToken ct = _pdfPageNavCts.Token;
+        previousCts?.Cancel();
+        previousCts?.Dispose();
 
-        _currentPdfPageContent = await _loadedPdfDocument.GetPageContentAsync(pageIndex);
-        frameContentImageSource = _currentPdfPageContent.RenderedPage;
-        hasLoadedImageSource = true;
-        isStaticImageSource = true;
-        frozenUiAutomationSnapshot = null;
-        liveUiAutomationSnapshot = null;
-        _currentImagePath = _loadedPdfDocument.FilePath;
-        _currentPdfPageIndex = pageIndex;
-        FreezeToggleButton.IsChecked = true;
-        FreezeGrabFrame();
-        MainZoomBorder.CanZoom = true;
-        FreezeToggleButton.Visibility = Visibility.Collapsed;
-        UpdatePdfPageNavigation();
-        SwitchToOcrFallbackIfUiAutomation();
+        try
+        {
+            reDrawTimer.Stop();
+            ResetGrabFrame();
+            await Task.Delay(300, ct);
 
-        reDrawTimer.Start();
+            if (_loadedPdfDocument is null || ct.IsCancellationRequested)
+                return;
+
+            _currentPdfPageContent = await _loadedPdfDocument.GetPageContentAsync(pageIndex);
+            frameContentImageSource = _currentPdfPageContent.RenderedPage;
+            hasLoadedImageSource = true;
+            isStaticImageSource = true;
+            frozenUiAutomationSnapshot = null;
+            liveUiAutomationSnapshot = null;
+            _currentImagePath = _loadedPdfDocument.FilePath;
+            _currentPdfPageIndex = pageIndex;
+            FreezeToggleButton.IsChecked = true;
+            FreezeGrabFrame();
+            MainZoomBorder.CanZoom = true;
+            FreezeToggleButton.Visibility = Visibility.Collapsed;
+            UpdatePdfPageNavigation();
+            SwitchToOcrFallbackIfUiAutomation();
+
+            reDrawTimer.Start();
+        }
+        catch (OperationCanceledException)
+        {
+            // Navigation superseded by a newer request — no-op
+        }
     }
 
     private void UpdatePdfPageNavigation()
@@ -2218,6 +2238,7 @@ public partial class GrabFrame : Window
             Singleton<HistoryService>.Instance.SaveToHistory(this);
 
         historyItem?.ClearTransientImage();
+        ClearLoadedPdfDocument();
 
         FrameText = "";
         wordBorders.Clear();
@@ -3585,6 +3606,7 @@ new GrabFrameOperationArgs()
     {
         try
         {
+            ClearLoadedPdfDocument();
             _loadedPdfDocument = await PdfDocumentRenderer.LoadAsync(path);
             _currentImagePath = Path.GetFullPath(path);
             await ShowPdfPageAsync(0);

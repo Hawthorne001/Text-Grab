@@ -98,4 +98,40 @@ public class ClipboardUtilitiesTests
         Assert.Equal("Name\tValue", lines[0]);
         Assert.Equal("Foo\t42", lines[1]);
     }
+
+    [Fact]
+    public void ConvertHtmlToTabSeparated_HandlesColspan()
+    {
+        string html = """
+            <!--StartFragment--><table>
+                <tr><td colspan="2">Merged</td><td>Right</td></tr>
+                <tr><td>A</td><td>B</td><td>C</td></tr>
+            </table><!--EndFragment-->
+            """;
+
+        string result = ClipboardUtilities.ConvertHtmlToTabSeparated(html);
+
+        string[] lines = result.Split('\n');
+        Assert.Equal(2, lines.Length);
+        Assert.Equal("Merged\tMerged\tRight", lines[0]);
+        Assert.Equal("A\tB\tC", lines[1]);
+    }
+
+    [Fact]
+    public void ConvertHtmlToTabSeparated_HandlesRowspan()
+    {
+        string html = """
+            <!--StartFragment--><table>
+                <tr><td rowspan="2">Tall</td><td>Top</td></tr>
+                <tr><td>Bottom</td></tr>
+            </table><!--EndFragment-->
+            """;
+
+        string result = ClipboardUtilities.ConvertHtmlToTabSeparated(html);
+
+        string[] lines = result.Split('\n');
+        Assert.Equal(2, lines.Length);
+        Assert.Equal("Tall\tTop", lines[0]);
+        Assert.Equal("Tall\tBottom", lines[1]);
+    }
 }

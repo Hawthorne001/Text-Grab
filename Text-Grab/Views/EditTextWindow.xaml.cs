@@ -2465,6 +2465,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
                     {
                         RowIndex = row,
                         ColumnIndex = col,
+                        Index = m.Index,
                         Text = m.Value.MakeStringSingleLine(),
                         PreviewLeft = cellValue[previewStart..m.Index],
                         PreviewRight = cellValue[(m.Index + m.Length)..previewEnd],
@@ -2496,7 +2497,12 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
                 int row = g.Key.Item1, col = g.Key.Item2;
                 string oldValue = row < tableDocument.Rows.Count && col < tableDocument.Rows[row].Count
                     ? tableDocument.Rows[row][col] ?? string.Empty : string.Empty;
-                return (RowIndex: row, ColumnIndex: col, Value: pattern.Replace(oldValue, replaceWith));
+
+                HashSet<int> indicesToReplace = [.. g.Select(r => r.Index)];
+                string newValue = pattern.Replace(oldValue, m =>
+                    indicesToReplace.Contains(m.Index) ? m.Result(replaceWith) : m.Value);
+
+                return (RowIndex: row, ColumnIndex: col, Value: newValue);
             });
 
         SetSpreadsheetDocumentCellValues(tableDocument, updates);

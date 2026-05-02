@@ -66,9 +66,11 @@ internal sealed class PdfPageTextLine
 internal sealed class PdfDocumentRenderer : IDisposable
 {
     private const double DefaultRenderScale = 2.0;
+    private const int MaxCachedPages = 10;
     private readonly WinPdfDocument renderDocument;
     private readonly PigPdfDocument textDocument;
     private readonly Dictionary<int, PdfPageContent> pageCache = [];
+    private readonly LinkedList<int> cacheOrder = new();
 
     private PdfDocumentRenderer(string filePath, WinPdfDocument renderDocument, PigPdfDocument textDocument)
     {
@@ -123,7 +125,11 @@ internal sealed class PdfDocumentRenderer : IDisposable
         ValidatePageIndex(pageIndex);
 
         if (pageCache.TryGetValue(pageIndex, out PdfPageContent? cachedPage))
+        {
+            cacheOrder.Remove(pageIndex);
+            cacheOrder.AddLast(pageIndex);
             return cachedPage;
+        }
 
         WinPdfPage renderPage = renderDocument.GetPage((uint)pageIndex);
         try
@@ -135,7 +141,15 @@ internal sealed class PdfDocumentRenderer : IDisposable
             List<Windows.Foundation.Rect> imageRegions = ExtractImageRegions(textPage, renderedPage.PixelWidth, renderedPage.PixelHeight);
 
             PdfPageContent pageContent = new(pageIndex, renderedPage, nativeLines, imageRegions);
+
+            if (pageCache.Count >= MaxCachedPages && cacheOrder.First is LinkedListNode<int> oldest)
+            {
+                pageCache.Remove(oldest.Value);
+                cacheOrder.RemoveFirst();
+            }
+
             pageCache[pageIndex] = pageContent;
+            cacheOrder.AddLast(pageIndex);
             return pageContent;
         }
         finally
@@ -159,7 +173,8 @@ internal sealed class PdfDocumentRenderer : IDisposable
         IReadOnlyList<PdfPageTextLine> imageOcrLines = await GetOcrLinesAsync(
             pageContent.RenderedPage,
             resolvedLanguage,
-            sourceRect => ShouldIncludeOcrLine(sourceRect, pageContent.ImageRegions));
+            sourceRect => ShouldIncludeOcrLine(sourceRect, pageContent.ImageRegions)
+                       && !ShouldIncludeOcrLine(sourceRect, pageContent.NativeLines.Select(l => l.SourceRect).ToList()));
 
         combinedLines.AddRange(imageOcrLines);
         return SortLines(combinedLines);
