@@ -259,11 +259,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         if (files is null)
             return;
 
-        List<string> imageFiles = [.. files.Where(x => IoUtilities.ImageExtensions.Contains(Path.GetExtension(x).ToLower()))];
+        List<string> imageFiles = [.. files.Where(x => IoUtilities.IsVisualDocumentFileExtension(Path.GetExtension(x).ToLower()))];
 
         if (imageFiles.Count == 0)
         {
-            PassedTextControl.AppendText($"{folderPath} contains no images");
+            PassedTextControl.AppendText($"{folderPath} contains no images or PDFs");
             return;
         }
 
@@ -293,7 +293,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         {
             PassedTextControl.AppendText(folderPath);
             PassedTextControl.AppendText(Environment.NewLine);
-            PassedTextControl.AppendText($"{imageFiles.Count} images found");
+            PassedTextControl.AppendText($"{imageFiles.Count} files found");
 
             if (!string.IsNullOrEmpty(tesseractLanguageTag))
             {
@@ -342,14 +342,14 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             if (options.OutputFooter)
             {
                 PassedTextControl.AppendText(Environment.NewLine);
-                PassedTextControl.AppendText($"----- COMPLETED OCR OF {imageFiles.Count} images");
+                PassedTextControl.AppendText($"----- COMPLETED OCR OF {imageFiles.Count} files");
             }
         }
         catch (OperationCanceledException)
         {
             PassedTextControl.AppendText(Environment.NewLine);
             int countCompleted = ocrFileResults.Where(r => r.OcrResult is not null).Count();
-            PassedTextControl.AppendText($"----- CANCELLED OCR OF {ocrFileResults.Count - countCompleted}, Completed {countCompleted} images");
+            PassedTextControl.AppendText($"----- CANCELLED OCR OF {ocrFileResults.Count - countCompleted}, Completed {countCompleted} files");
         }
         finally
         {
@@ -2489,7 +2489,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
         SpreadsheetUndoState? beforeState = CreateCurrentSpreadsheetUndoState(syncFromTable: false);
 
-        var updates = targets
+        IEnumerable<(int RowIndex, int ColumnIndex, string Value)> updates = targets
             .Where(r => r.RowIndex.HasValue && r.ColumnIndex.HasValue)
             .GroupBy(r => (r.RowIndex!.Value, r.ColumnIndex!.Value))
             .Select(g =>
@@ -2883,6 +2883,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             Header = "(None)",
             IsCheckable = true,
             IsChecked = previouslySelected is null,
+            StaysOpenOnClick = true,
         };
         noneItem.Click += GrabTemplateMenuItem_Click;
         grabTemplateMenuItem.Items.Add(noneItem);
@@ -2895,6 +2896,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
                 IsCheckable = true,
                 IsChecked = previouslySelected?.Id == template.Id,
                 Tag = template,
+                StaysOpenOnClick = true,
             };
             templateMenuItem.Click += GrabTemplateMenuItem_Click;
             grabTemplateMenuItem.Items.Add(templateMenuItem);
@@ -2995,6 +2997,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
                 Tag = language,
                 IsCheckable = true,
                 IsChecked = i == selectedIndex,
+                StaysOpenOnClick = true,
             };
             languageMenuItem.Click += LanguageMenuItem_Click;
             captureMenuItem.Items.Add(languageMenuItem);
