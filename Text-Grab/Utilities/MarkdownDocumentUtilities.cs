@@ -31,16 +31,7 @@ public static partial class MarkdownDocumentUtilities
     private static readonly Regex MarkdownPatternRegex = MarkdownPattern();
 
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
-        .UseAutoLinks()
-        .UsePipeTables()
-        .UseTaskLists()
-        .UseCitations()
-        .UseDiagrams()
-        .UseAlertBlocks()
-        .UseEmojiAndSmiley()
-        .UseEmphasisExtras()
-        .UseAutoIdentifiers()
-        .UseGridTables()
+        .UseAdvancedExtensions()
         .Build();
 
     private enum MarkdownBlockRole
