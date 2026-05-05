@@ -83,7 +83,10 @@
             <MenuItem Click="AddSpreadsheetRowMenuItem_Click" Header="Add Row Below" />
             <MenuItem Click="AddSpreadsheetColumnMenuItem_Click" Header="Add Column Right" />
             <Separator />
-            <MenuItem Click="CopySpreadsheetSelectionMenuItem_Click" Header="Copy" />
+            <MenuItem Command="ApplicationCommands.Cut" />
+            <MenuItem Command="ApplicationCommands.Copy" />
+            <MenuItem Command="ApplicationCommands.Paste" />
+            <Separator />
             <MenuItem Click="CopySpreadsheetRowsMenuItem_Click" Header="Copy Selected Rows" />
             <MenuItem Click="CopySpreadsheetColumnMenuItem_Click" Header="Copy Current Column" />
         </ContextMenu>
