@@ -1,5 +1,4 @@
 using Markdig;
-using Markdig.Extensions.Tables;
 using Markdig.Extensions.TaskLists;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
@@ -25,21 +24,14 @@ using WpfTableRow = System.Windows.Documents.TableRow;
 
 namespace Text_Grab.Utilities;
 
-public static class MarkdownDocumentUtilities
+public static partial class MarkdownDocumentUtilities
 {
-    private static readonly Regex LiveBlockTriggerRegex = new(
-        @"^\s{0,3}(#{1,6}|>+|[-+*]|\d+[.)])$",
-        RegexOptions.Compiled);
-    private static readonly Regex LiveInlinePromotionRegex = new(
-        @"(^|\s)\[( |x|X)\](\s|$)|(\*\*|__)(?=\S).+?\4|(?<!\*)\*(?=\S).+?(?<=\S)\*|(?<!_)_(?=\S).+?(?<=\S)_|`[^`\r\n]+`|\[[^\]\r\n]+\]\([^)]+\)",
-        RegexOptions.Compiled);
-    private static readonly Regex MarkdownPatternRegex = new(
-        @"(^|\n)\s{0,3}(#{1,6}\s|>+\s|[-+*]\s|\d+[.)]\s|```|~~~|---\s*$|___\s*$|\*\*\*\s*$)|\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\)|(^|\n)\|.+\|\s*$",
-        RegexOptions.Compiled | RegexOptions.Multiline);
+    private static readonly Regex LiveBlockTriggerRegex = LiveBlockTrigger();
+    private static readonly Regex LiveInlinePromotionRegex = LiveInlinePromotion();
+    private static readonly Regex MarkdownPatternRegex = MarkdownPattern();
+
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
-        .UseAutoLinks()
-        .UsePipeTables()
-        .UseTaskLists()
+        .UseAdvancedExtensions()
         .Build();
 
     private enum MarkdownBlockRole
@@ -492,8 +484,8 @@ public static class MarkdownDocumentUtilities
         if (firstGroup is null || firstGroup.Rows.Count == 0)
             return;
 
-        List<WpfTableRow> rows = firstGroup.Rows.Cast<WpfTableRow>().ToList();
-        List<string> headerCells = rows[0].Cells.Cast<WpfTableCell>().Select(SerializeTableCell).ToList();
+        List<WpfTableRow> rows = [.. firstGroup.Rows.Cast<WpfTableRow>()];
+        List<string> headerCells = [.. rows[0].Cells.Cast<WpfTableCell>().Select(SerializeTableCell)];
 
         builder.Append(ApplyQuotePrefix($"| {string.Join(" | ", headerCells)} |", quotePrefix));
         builder.AppendLine();
@@ -506,7 +498,7 @@ public static class MarkdownDocumentUtilities
         foreach (WpfTableRow row in dataRows)
         {
             builder.AppendLine();
-            List<string> rowCells = row.Cells.Cast<WpfTableCell>().Select(SerializeTableCell).ToList();
+            List<string> rowCells = [.. row.Cells.Cast<WpfTableCell>().Select(SerializeTableCell)];
             builder.Append(ApplyQuotePrefix($"| {string.Join(" | ", rowCells)} |", quotePrefix));
         }
     }
@@ -834,4 +826,14 @@ public static class MarkdownDocumentUtilities
     private static string GetCodeFenceInfo(DependencyObject element) => (string)element.GetValue(CodeFenceInfoProperty);
     private static void SetIsTableHeader(DependencyObject element, bool value) => element.SetValue(IsTableHeaderProperty, value);
     private static bool GetIsTableHeader(DependencyObject element) => (bool)element.GetValue(IsTableHeaderProperty);
+
+
+    [GeneratedRegex(@"^\s{0,3}(#{1,6}|>+|[-+*]|\d+[.)])$", RegexOptions.Compiled)]
+    private static partial Regex LiveBlockTrigger();
+
+    [GeneratedRegex(@"(^|\s)\[( |x|X)\](\s|$)|(\*\*|__)(?=\S).+?\4|(?<!\*)\*(?=\S).+?(?<=\S)\*|(?<!_)_(?=\S).+?(?<=\S)_|`[^`\r\n]+`|\[[^\]\r\n]+\]\([^)]+\)", RegexOptions.Compiled)]
+    private static partial Regex LiveInlinePromotion();
+
+    [GeneratedRegex(@"(^|\n)\s{0,3}(#{1,6}\s|>+\s|[-+*]\s|\d+[.)]\s|```|~~~|---\s*$|___\s*$|\*\*\*\s*$)|\[[^\]]+\]\([^)]+\)|!\[[^\]]*\]\([^)]+\)|(^|\n)\|.+\|\s*$", RegexOptions.Multiline | RegexOptions.Compiled)]
+    private static partial Regex MarkdownPattern();
 }

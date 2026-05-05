@@ -59,6 +59,8 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     #region Properties
 
+    private bool IsSpreadsheetSearch => textEditWindow?.IsSpreadsheetMode is true;
+
     public List<FindResult> FindResults { get; set; } = [];
 
     public string StringFromWindow
@@ -85,6 +87,8 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     public void SearchForText()
     {
+        if (IsSpreadsheetSearch) { SearchSpreadsheetCells(); return; }
+
         FindResults.Clear();
         ResultsListView.ItemsSource = null;
 
@@ -180,6 +184,61 @@ public partial class FindAndReplaceWindow : FluentWindow
         }
     }
 
+    private Regex? BuildCurrentRegex()
+    {
+        string rawPattern = FindTextBox.Text;
+        if (string.IsNullOrEmpty(rawPattern)) return null;
+
+        if (rawPattern.StartsWith('^') && rawPattern.EndsWith('$') && rawPattern.Length > 2)
+            rawPattern = rawPattern[1..^1];
+
+        if (UsePatternCheckBox.IsChecked is false && ExactMatchCheckBox.IsChecked is bool matchExactly)
+            rawPattern = rawPattern.EscapeSpecialRegexChars(matchExactly);
+
+        RegexOptions options = RegexOptions.None;
+        if (ExactMatchCheckBox.IsChecked is not true) options |= RegexOptions.IgnoreCase;
+        if (UsePatternCheckBox.IsChecked is true)     options |= RegexOptions.IgnorePatternWhitespace;
+
+        try { return new Regex(rawPattern, options, TimeSpan.FromSeconds(5)); }
+        catch { return null; }
+    }
+
+    private void SearchSpreadsheetCells()
+    {
+        FindResults.Clear();
+        ResultsListView.ItemsSource = null;
+        Matches = null;
+
+        if (textEditWindow is null || string.IsNullOrWhiteSpace(FindTextBox.Text))
+        {
+            MatchesText.Text = "0 Matches";
+            return;
+        }
+
+        Regex? regex = BuildCurrentRegex();
+        if (regex is null) { MatchesText.Text = "0 Matches"; return; }
+
+        textEditWindow.CommitSpreadsheetAndSync();
+
+        List<FindResult> results;
+        try { results = textEditWindow.SearchSpreadsheetCells(regex); }
+        catch (RegexMatchTimeoutException) { MatchesText.Text = "Regex timeout"; return; }
+
+        FindResults.AddRange(results);
+        if (FindResults.Count == 0) { MatchesText.Text = "0 Matches"; return; }
+
+        MatchesText.Text = FindResults.Count == 1 ? "1 Match" : $"{FindResults.Count} Matches";
+        ResultsListView.IsEnabled = true;
+        ResultsListView.ItemsSource = FindResults;
+
+        FindResult first = FindResults[0];
+        if (this.IsFocused && first.RowIndex.HasValue && first.ColumnIndex.HasValue)
+        {
+            textEditWindow.NavigateToSpreadsheetCell(first.RowIndex.Value, first.ColumnIndex.Value);
+            this.Focus();
+        }
+    }
+
     public void ShouldCloseWithThisETW(EditTextWindow etw)
     {
         if (textEditWindow is not null && etw == textEditWindow)
@@ -200,6 +259,12 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void CopyMatchesCmd_CanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
+        if (IsSpreadsheetSearch)
+        {
+            e.CanExecute = FindResults.Count > 0 && !string.IsNullOrEmpty(FindTextBox.Text);
+            return;
+        }
+
         if (Matches is null || Matches.Count < 1 || string.IsNullOrEmpty(FindTextBox.Text))
             e.CanExecute = false;
         else
@@ -208,9 +273,9 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void CopyMatchesCmd_Executed(object sender, ExecutedRoutedEventArgs e)
     {
-        if (Matches is null
-            || textEditWindow is null
-            || Matches.Count < 1)
+        if (textEditWindow is null) return;
+
+        if (!IsSpreadsheetSearch && (Matches is null || Matches.Count < 1))
             return;
 
         StringBuilder stringBuilder = new();
@@ -230,6 +295,12 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void DeleteAll_CanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
+        if (IsSpreadsheetSearch)
+        {
+            e.CanExecute = FindResults.Count > 0 && !string.IsNullOrEmpty(FindTextBox.Text);
+            return;
+        }
+
         if (Matches is not null && Matches.Count > 1 && !string.IsNullOrEmpty(FindTextBox.Text))
             e.CanExecute = true;
         else
@@ -238,24 +309,41 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private async void DeleteAll_Executed(object sender, ExecutedRoutedEventArgs e)
     {
-        if (Matches is null
-            || Matches.Count < 1
-            || textEditWindow is null)
+        if (textEditWindow is null) return;
+
+        if (IsSpreadsheetSearch)
+        {
+            if (FindResults.Count == 0) return;
+            SetWindowToLoading();
+            Regex? regex = BuildCurrentRegex();
+            if (regex is null) { ResetWindowLoading(); return; }
+            IList selection = ResultsListView.SelectedItems;
+            List<FindResult> targets = selection.Count >= 2
+                ? [.. selection.Cast<FindResult>()]
+                : [.. ResultsListView.Items.Cast<FindResult>()];
+            await Task.Run(() => Dispatcher.Invoke(() =>
+                textEditWindow.ReplaceInSpreadsheetCells(targets, string.Empty, regex)));
+            SearchForText();
+            ResetWindowLoading();
+            return;
+        }
+
+        if (Matches is null || Matches.Count < 1)
             return;
 
         SetWindowToLoading();
 
-        IList selection = ResultsListView.SelectedItems;
+        IList selection2 = ResultsListView.SelectedItems;
         StringBuilder stringBuilderOfText = new(textEditWindow.PassedTextControl.Text);
 
         await Task.Run(() =>
         {
-            if (selection.Count < 2)
-                selection = ResultsListView.Items;
+            if (selection2.Count < 2)
+                selection2 = ResultsListView.Items;
 
-            for (int j = selection.Count - 1; j >= 0; j--)
+            for (int j = selection2.Count - 1; j >= 0; j--)
             {
-                if (selection[j] is not FindResult selectedResult)
+                if (selection2[j] is not FindResult selectedResult)
                     continue;
 
                 stringBuilderOfText.Remove(selectedResult.Index, selectedResult.Length);
@@ -270,6 +358,8 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void EditTextBoxChanged(object sender, TextChangedEventArgs e)
     {
+        if (IsSpreadsheetSearch) return;
+
         ChangeFindTextTimer.Stop();
         if (textEditWindow is not null)
             StringFromWindow = textEditWindow.PassedTextControl.Text;
@@ -279,6 +369,8 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void ExtractPattern_CanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
+        if (IsSpreadsheetSearch) { e.CanExecute = false; return; }
+
         if (textEditWindow is not null
             && textEditWindow.PassedTextControl.SelectedText.Length > 0)
             e.CanExecute = true;
@@ -410,6 +502,12 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void Replace_CanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
+        if (IsSpreadsheetSearch)
+        {
+            e.CanExecute = FindResults.Count > 0 && !string.IsNullOrEmpty(ReplaceTextBox.Text);
+            return;
+        }
+
         if (string.IsNullOrEmpty(ReplaceTextBox.Text)
             || Matches is null
             || Matches.Count < 1)
@@ -420,10 +518,21 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void Replace_Executed(object sender, ExecutedRoutedEventArgs e)
     {
-        if (Matches is null
-            || textEditWindow is null
-            || ResultsListView.Items.Count is 0)
+        if (textEditWindow is null || ResultsListView.Items.Count is 0)
             return;
+
+        if (IsSpreadsheetSearch)
+        {
+            if (ResultsListView.SelectedIndex == -1) ResultsListView.SelectedIndex = 0;
+            if (ResultsListView.SelectedItem is not FindResult fr) return;
+            Regex? regex = BuildCurrentRegex();
+            if (regex is null) return;
+            textEditWindow.ReplaceInSpreadsheetCells([fr], ReplaceTextBox.Text, regex);
+            SearchForText();
+            return;
+        }
+
+        if (Matches is null) return;
 
         if (ResultsListView.SelectedIndex == -1)
             ResultsListView.SelectedIndex = 0;
@@ -439,26 +548,44 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private async void ReplaceAll_Executed(object sender, ExecutedRoutedEventArgs e)
     {
-        if (Matches is null
-            || Matches.Count < 1
-            || textEditWindow is null)
+        if (textEditWindow is null) return;
+
+        if (IsSpreadsheetSearch)
+        {
+            if (FindResults.Count == 0) return;
+            SetWindowToLoading();
+            Regex? regex = BuildCurrentRegex();
+            if (regex is null) { ResetWindowLoading(); return; }
+            IList selection = ResultsListView.SelectedItems;
+            List<FindResult> targets = selection.Count >= 2
+                ? [.. selection.Cast<FindResult>()]
+                : [.. ResultsListView.Items.Cast<FindResult>()];
+            string replaceWith = ReplaceTextBox.Text;
+            await Task.Run(() => Dispatcher.Invoke(() =>
+                textEditWindow.ReplaceInSpreadsheetCells(targets, replaceWith, regex)));
+            SearchForText();
+            ResetWindowLoading();
+            return;
+        }
+
+        if (Matches is null || Matches.Count < 1)
             return;
 
         SetWindowToLoading();
 
         StringBuilder stringBuilder = new(textEditWindow.PassedTextControl.Text);
 
-        IList selection = ResultsListView.SelectedItems;
+        IList selection2 = ResultsListView.SelectedItems;
         string newText = ReplaceTextBox.Text;
 
         await Task.Run(() =>
         {
-            if (selection.Count < 2)
-                selection = ResultsListView.Items;
+            if (selection2.Count < 2)
+                selection2 = ResultsListView.Items;
 
-            for (int j = selection.Count - 1; j >= 0; j--)
+            for (int j = selection2.Count - 1; j >= 0; j--)
             {
-                if (selection[j] is not FindResult selectedResult)
+                if (selection2[j] is not FindResult selectedResult)
                     continue;
 
                 stringBuilder.Remove(selectedResult.Index, selectedResult.Length);
@@ -486,15 +613,21 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ResultsListView.SelectedItem is not FindResult selectedResult)
+        if (ResultsListView.SelectedItem is not FindResult selectedResult || textEditWindow is null)
             return;
 
-        if (textEditWindow is not null)
+        if (IsSpreadsheetSearch)
         {
-            textEditWindow.PassedTextControl.Focus();
-            textEditWindow.PassedTextControl.Select(selectedResult.Index, selectedResult.Length);
+            if (selectedResult.RowIndex.HasValue && selectedResult.ColumnIndex.HasValue)
+                textEditWindow.NavigateToSpreadsheetCell(
+                    selectedResult.RowIndex.Value, selectedResult.ColumnIndex.Value);
             this.Focus();
+            return;
         }
+
+        textEditWindow.PassedTextControl.Focus();
+        textEditWindow.PassedTextControl.Select(selectedResult.Index, selectedResult.Length);
+        this.Focus();
     }
 
     private void SetExtraOptionsVisibility(Visibility optionsVisibility)

@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Markup;
@@ -72,6 +73,49 @@ public partial class App : System.Windows.Application
         }
 
         SetTheme();
+    }
+
+    public static async Task OpenFileWithPickerAsync(bool isQuiet = false)
+    {
+        OpenFileDialog openFileDialog = new()
+        {
+            Filter = FileUtilities.GetOpenDocumentFilter(),
+            Title = "Open File",
+            CheckFileExists = true,
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+        };
+
+        if (openFileDialog.ShowDialog() == true)
+            await TryToOpenFilePathAsync(openFileDialog.FileName, isQuiet);
+    }
+
+    public static DragDropEffects GetDroppedFileEffect(IDataObject? dataObject)
+    {
+        return GetDroppedFilePaths(dataObject).Any()
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+    }
+
+    public static IReadOnlyList<string> GetDroppedFilePaths(IDataObject? dataObject)
+    {
+        if (dataObject is null || !dataObject.GetDataPresent(DataFormats.FileDrop, true))
+            return [];
+
+
+        if (dataObject.GetData(DataFormats.FileDrop, true) is not string[] paths || paths.Length == 0)
+            return [];
+
+        return [.. paths.Where(File.Exists)];
+    }
+
+    public static async Task<bool> TryToOpenDroppedFilesAsync(IDataObject? dataObject, bool isQuiet = false)
+    {
+        bool openedAny = false;
+
+        foreach (string path in GetDroppedFilePaths(dataObject))
+            openedAny = await TryToOpenFilePathAsync(path, isQuiet) || openedAny;
+
+        return openedAny;
     }
 
     public static void SetTheme(object? sender = null, EventArgs? e = null)
@@ -240,7 +284,7 @@ public partial class App : System.Windows.Application
             }
             else
             {
-                Debug.WriteLine("--grabframe flag specified but no valid image file path provided");
+                Debug.WriteLine("--grabframe flag specified but no valid image or PDF file path provided");
                 // Fall through to default launch behavior
             }
         }
@@ -265,7 +309,7 @@ public partial class App : System.Windows.Application
             return true;
         }
 
-        bool openedFile = await TryToOpenFile(currentArgument, isQuiet);
+        bool openedFile = await TryToOpenFilePathAsync(currentArgument, isQuiet);
         if (openedFile)
             return true;
 
@@ -305,7 +349,7 @@ public partial class App : System.Windows.Application
         _defaultSettings.Save();
     }
 
-    private static async Task<bool> TryToOpenFile(string possiblePath, bool isQuiet)
+    public static async Task<bool> TryToOpenFilePathAsync(string possiblePath, bool isQuiet = false)
     {
         if (!File.Exists(possiblePath))
             return false;
@@ -318,7 +362,7 @@ public partial class App : System.Windows.Application
                 false,
                 false);
         }
-        else if (IoUtilities.IsImageFile(possiblePath))
+        else if (IoUtilities.IsVisualDocumentFile(possiblePath))
         {
             GrabFrame gf = new(possiblePath);
             gf.Show();
@@ -329,6 +373,7 @@ public partial class App : System.Windows.Application
             EditTextWindow manipulateTextWindow = new();
             manipulateTextWindow.OpenPath(possiblePath);
             manipulateTextWindow.Show();
+            manipulateTextWindow.Activate();
         }
         return true;
     }

@@ -33,6 +33,7 @@ public enum OpenContentKind
     Image = 0,
     TextFile = 1,
     Directory = 2,
+    PdfDocument = 3,
 }
 
 public enum OcrEngineKind

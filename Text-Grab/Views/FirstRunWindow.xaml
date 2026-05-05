@@ -296,7 +296,7 @@
                 <TextBlock Style="{StaticResource TextBody}">
                     • The Grab Frame is a window which can be moved or resized. It stays on top of other windows and will read all of the text within the border.<LineBreak />
                     • Click or drag to select Word Borders then add them to the clipboard by clicking &quot;Grab&quot;.<LineBreak />
-                    • Drop an image onto the Grab Frame to view the image and copy text.<LineBreak />
+                    • Drop an image or PDF onto the Grab Frame to view it and copy text.<LineBreak />
                     • Pause the Grab Frame and scroll to zoom in on a piece of text.<LineBreak />
                     • Edit each line to correct any errors and fix up the results to be perfect.<LineBreak />
                     • Table mode will draw a grid around the lines to be pasted into a table easily.<LineBreak />

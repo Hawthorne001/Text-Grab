@@ -50,7 +50,6 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private const double SpreadsheetDefaultColumnWidth = 120;
     private const double HorizontalWheelScrollStep = 48;
     private const int WmMouseHWheel = 0x020E;
-    private const string OpenDocumentFilter = "Supported text documents (*.csv;*.tsv;*.tab;*.md;*.markdown;*.txt)|*.csv;*.tsv;*.tab;*.md;*.markdown;*.txt|Spreadsheet documents (*.csv;*.tsv;*.tab)|*.csv;*.tsv;*.tab|Markdown documents (*.md;*.markdown)|*.md;*.markdown|Text documents (*.txt)|*.txt|All files (*.*)|*.*";
     private const string SaveDocumentFilter = "Spreadsheet documents (*.csv;*.tsv;*.tab)|*.csv;*.tsv;*.tab|Markdown documents (*.md;*.markdown)|*.md;*.markdown|Text documents (*.txt)|*.txt|All files (*.*)|*.*";
     #region Fields
 
@@ -260,11 +259,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         if (files is null)
             return;
 
-        List<string> imageFiles = [.. files.Where(x => IoUtilities.ImageExtensions.Contains(Path.GetExtension(x).ToLower()))];
+        List<string> imageFiles = [.. files.Where(x => IoUtilities.IsVisualDocumentFileExtension(Path.GetExtension(x).ToLower()))];
 
         if (imageFiles.Count == 0)
         {
-            PassedTextControl.AppendText($"{folderPath} contains no images");
+            PassedTextControl.AppendText($"{folderPath} contains no images or PDFs");
             return;
         }
 
@@ -294,7 +293,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         {
             PassedTextControl.AppendText(folderPath);
             PassedTextControl.AppendText(Environment.NewLine);
-            PassedTextControl.AppendText($"{imageFiles.Count} images found");
+            PassedTextControl.AppendText($"{imageFiles.Count} files found");
 
             if (!string.IsNullOrEmpty(tesseractLanguageTag))
             {
@@ -343,14 +342,14 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             if (options.OutputFooter)
             {
                 PassedTextControl.AppendText(Environment.NewLine);
-                PassedTextControl.AppendText($"----- COMPLETED OCR OF {imageFiles.Count} images");
+                PassedTextControl.AppendText($"----- COMPLETED OCR OF {imageFiles.Count} files");
             }
         }
         catch (OperationCanceledException)
         {
             PassedTextControl.AppendText(Environment.NewLine);
             int countCompleted = ocrFileResults.Where(r => r.OcrResult is not null).Count();
-            PassedTextControl.AppendText($"----- CANCELLED OCR OF {ocrFileResults.Count - countCompleted}, Completed {countCompleted} images");
+            PassedTextControl.AppendText($"----- CANCELLED OCR OF {ocrFileResults.Count - countCompleted}, Completed {countCompleted} files");
         }
         finally
         {
@@ -599,15 +598,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void CopySpreadsheetSelectionMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = GetSelectedSpreadsheetCellCoordinates();
-        if (selectedCellCoordinates.Count == 0)
-            return;
-
-        string selectionText = BuildSpreadsheetSelectionText(spreadsheetTable, selectedCellCoordinates);
-        if (string.IsNullOrEmpty(selectionText))
-            return;
-
-        TrySetClipboardText(selectionText);
+        _ = TryCopySpreadsheetSelectionToClipboard(GetSelectedSpreadsheetCellCoordinates());
     }
 
     private void AddSpreadsheetColumnMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1107,6 +1098,24 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
 
+        if (e.Key == Key.X
+            && (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+            && !IsSpreadsheetCellEditorFocused())
+        {
+            e.Handled = true;
+            _ = TryCutSelectedSpreadsheetCellValues();
+            return;
+        }
+
+        if (e.Key == Key.V
+            && (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+            && !IsSpreadsheetCellEditorFocused())
+        {
+            e.Handled = true;
+            PasteIntoSpreadsheet();
+            return;
+        }
+
         if (e.Key != Key.Enter || SpreadsheetDataGrid.CurrentCell.Column is null)
             return;
 
@@ -1223,6 +1232,83 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
             dataTable.Rows[rowIndex][columnIndex] = string.Empty;
         }
+    }
+
+    internal static bool TryCutSpreadsheetCellValues(
+        DataTable dataTable,
+        IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates,
+        Func<string, bool> trySetClipboardText)
+    {
+        ArgumentNullException.ThrowIfNull(dataTable);
+        ArgumentNullException.ThrowIfNull(cellCoordinates);
+        ArgumentNullException.ThrowIfNull(trySetClipboardText);
+
+        string selectionText = BuildSpreadsheetSelectionText(dataTable, cellCoordinates);
+        if (string.IsNullOrEmpty(selectionText) || !trySetClipboardText(selectionText))
+            return false;
+
+        ClearSpreadsheetCellValues(dataTable, cellCoordinates);
+        return true;
+    }
+
+    private void PasteIntoSpreadsheet()
+    {
+        string clipboardText;
+        try
+        {
+            if (!ClipboardUtilities.TryGetHtmlTableAsTabSeparated(out clipboardText))
+                clipboardText = System.Windows.Clipboard.GetText();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"PasteIntoSpreadsheet: clipboard read failed. {ex.Message}");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(clipboardText))
+            return;
+
+        int startRow = Math.Max(0, SpreadsheetDataGrid.Items.IndexOf(SpreadsheetDataGrid.CurrentItem));
+        int startCol = Math.Max(0, SpreadsheetDataGrid.CurrentCell.Column?.DisplayIndex ?? 0);
+
+        // Parse clipboard text into a 2D array of cell values
+        string[] lines = clipboardText.Split('\n');
+        List<string[]> pastedRows = [];
+        foreach (string line in lines)
+            pastedRows.Add(line.TrimEnd('\r').Split('\t'));
+
+        // Remove trailing empty row artifact produced by a final newline in copied table text
+        while (pastedRows.Count > 1 && pastedRows[^1].Length == 1 && pastedRows[^1][0].Length == 0)
+            pastedRows.RemoveAt(pastedRows.Count - 1);
+
+        if (pastedRows.Count == 0)
+            return;
+
+        int maxPastedCols = pastedRows.Max(row => row.Length);
+
+        ApplySpreadsheetDocumentChange(document =>
+        {
+            // Expand the document to fit the pasted data if necessary
+            int requiredRows = startRow + pastedRows.Count;
+            int requiredCols = startCol + maxPastedCols;
+            document.RowCount = Math.Max(document.RowCount, requiredRows);
+            document.ColumnCount = Math.Max(document.ColumnCount, requiredCols);
+            document.MinimumRowCount = Math.Max(document.MinimumRowCount, requiredRows);
+            document.MinimumColumnCount = Math.Max(document.MinimumColumnCount, requiredCols);
+            document.EnsureMinimumSize();
+
+            // Write values into the target cells
+            for (int r = 0; r < pastedRows.Count; r++)
+            {
+                int targetRow = startRow + r;
+                for (int c = 0; c < pastedRows[r].Length; c++)
+                {
+                    int targetCol = startCol + c;
+                    if (targetRow < document.Rows.Count && targetCol < document.Rows[targetRow].Count)
+                        document.Rows[targetRow][targetCol] = pastedRows[r][c];
+                }
+            }
+        }, startRow, startCol);
     }
 
     internal static string BuildSpreadsheetSelectionText(
@@ -1444,6 +1530,24 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         e.Handled = true;
     }
 
+    private void SpreadsheetCopyCanExecute(object sender, CanExecuteRoutedEventArgs e)
+    {
+        if (editorMode != EtwEditorMode.Spreadsheet || IsSpreadsheetCellEditorFocused())
+            return;
+
+        e.CanExecute = GetSelectedSpreadsheetCellCoordinates().Count > 0;
+        e.Handled = true;
+    }
+
+    private void SpreadsheetPasteCanExecute(object sender, CanExecuteRoutedEventArgs e)
+    {
+        if (editorMode != EtwEditorMode.Spreadsheet || IsSpreadsheetCellEditorFocused())
+            return;
+
+        e.CanExecute = true;
+        e.Handled = true;
+    }
+
     private void SpreadsheetRedoCanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
         if (editorMode != EtwEditorMode.Spreadsheet || IsSpreadsheetCellEditorFocused())
@@ -1480,6 +1584,33 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
         RestoreSpreadsheetUndoState(nextState);
         CommandManager.InvalidateRequerySuggested();
+        e.Handled = true;
+    }
+
+    private void SpreadsheetCopyExecuted(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (editorMode != EtwEditorMode.Spreadsheet || IsSpreadsheetCellEditorFocused())
+            return;
+
+        _ = TryCopySpreadsheetSelectionToClipboard(GetSelectedSpreadsheetCellCoordinates());
+        e.Handled = true;
+    }
+
+    private void SpreadsheetCutExecuted(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (editorMode != EtwEditorMode.Spreadsheet || IsSpreadsheetCellEditorFocused())
+            return;
+
+        _ = TryCutSelectedSpreadsheetCellValues();
+        e.Handled = true;
+    }
+
+    private void SpreadsheetPasteExecuted(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (editorMode != EtwEditorMode.Spreadsheet || IsSpreadsheetCellEditorFocused())
+            return;
+
+        PasteIntoSpreadsheet();
         e.Handled = true;
     }
 
@@ -1643,15 +1774,41 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         DependencyPropertyDescriptor.FromProperty(DataGridColumn.WidthProperty, typeof(DataGridColumn))?.AddValueChanged(column, SpreadsheetColumnWidthChanged);
     }
 
-    private void TrySetClipboardText(string text)
+    private bool TrySetClipboardText(string text)
     {
         try
         {
             System.Windows.Clipboard.SetDataObject(text, true);
+            return true;
         }
         catch
         {
+            return false;
         }
+    }
+
+    private bool TryCopySpreadsheetSelectionToClipboard(IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates)
+    {
+        string selectionText = BuildSpreadsheetSelectionText(spreadsheetTable, cellCoordinates);
+        return !string.IsNullOrEmpty(selectionText) && TrySetClipboardText(selectionText);
+    }
+
+    private bool TryCutSelectedSpreadsheetCellValues()
+    {
+        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = GetSelectedSpreadsheetCellCoordinates();
+        if (selectedCellCoordinates.Count == 0)
+            return false;
+
+        CommitSpreadsheetEditsAndCapturePendingHistory();
+        SpreadsheetUndoState? beforeChange = CreateCurrentSpreadsheetUndoState(syncFromTable: true);
+
+        if (!TryCutSpreadsheetCellValues(spreadsheetTable, selectedCellCoordinates, TrySetClipboardText))
+            return false;
+
+        SyncSpreadsheetDocumentFromTable();
+        RecordSpreadsheetUndoChange(beforeChange, CreateCurrentSpreadsheetUndoState(syncFromTable: false));
+        UpdateLineAndColumnText();
+        return true;
     }
 
     private void UpdateSpreadsheetModeUi()
@@ -1886,6 +2043,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         finally
         {
             isLoadingOpenedFile = false;
+            SyncTextFromActiveEditor();
             SetOpenedFileState(shouldTrackOpenedFile ? pathOfFileToOpen : null);
         }
     }
@@ -2360,6 +2518,88 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         return textToModify;
     }
 
+    public bool IsSpreadsheetMode => editorMode == EtwEditorMode.Spreadsheet;
+
+    public void CommitSpreadsheetAndSync()
+    {
+        CommitSpreadsheetEditsAndCapturePendingHistory();
+        SyncSpreadsheetDocumentFromTable(writeText: false);
+    }
+
+    public void NavigateToSpreadsheetCell(int rowIndex, int columnIndex)
+    {
+        Dispatcher.BeginInvoke(
+            () => FocusSpreadsheetCell(rowIndex, columnIndex, beginEdit: false),
+            DispatcherPriority.Background);
+    }
+
+    public List<FindResult> SearchSpreadsheetCells(Regex pattern)
+    {
+        if (tableDocument is null) return [];
+        tableDocument.EnsureMinimumSize();
+        List<FindResult> results = [];
+        int count = 1;
+
+        for (int row = 0; row < tableDocument.RowCount; row++)
+        {
+            List<string> rowData = tableDocument.Rows[row];
+            for (int col = 0; col < tableDocument.ColumnCount; col++)
+            {
+                string cellValue = col < rowData.Count ? rowData[col] ?? string.Empty : string.Empty;
+                foreach (Match m in pattern.Matches(cellValue))
+                {
+                    int previewStart = Math.Max(0, m.Index - 12);
+                    int previewEnd = Math.Min(cellValue.Length, m.Index + m.Length + 12);
+                    results.Add(new FindResult
+                    {
+                        RowIndex = row,
+                        ColumnIndex = col,
+                        Index = m.Index,
+                        Text = m.Value.MakeStringSingleLine(),
+                        PreviewLeft = cellValue[previewStart..m.Index],
+                        PreviewRight = cellValue[(m.Index + m.Length)..previewEnd],
+                        Count = count++
+                    });
+                }
+            }
+        }
+        return results;
+    }
+
+    public void ReplaceInSpreadsheetCells(
+        IEnumerable<FindResult> targets,
+        string replaceWith,
+        Regex pattern)
+    {
+        CommitSpreadsheetEditsAndCapturePendingHistory();
+        SyncSpreadsheetDocumentFromTable(writeText: false);
+
+        if (tableDocument is null) return;
+
+        SpreadsheetUndoState? beforeState = CreateCurrentSpreadsheetUndoState(syncFromTable: false);
+
+        IEnumerable<(int RowIndex, int ColumnIndex, string Value)> updates = targets
+            .Where(r => r.RowIndex.HasValue && r.ColumnIndex.HasValue)
+            .GroupBy(r => (r.RowIndex!.Value, r.ColumnIndex!.Value))
+            .Select(g =>
+            {
+                int row = g.Key.Item1, col = g.Key.Item2;
+                string oldValue = row < tableDocument.Rows.Count && col < tableDocument.Rows[row].Count
+                    ? tableDocument.Rows[row][col] ?? string.Empty : string.Empty;
+
+                HashSet<int> indicesToReplace = [.. g.Select(r => r.Index)];
+                string newValue = pattern.Replace(oldValue, m =>
+                    indicesToReplace.Contains(m.Index) ? m.Result(replaceWith) : m.Value);
+
+                return (RowIndex: row, ColumnIndex: col, Value: newValue);
+            });
+
+        SetSpreadsheetDocumentCellValues(tableDocument, updates);
+        RebuildSpreadsheetTable();
+        UpdateTextFromSpreadsheetDocument();
+        RecordSpreadsheetUndoChange(beforeState, CreateCurrentSpreadsheetUndoState(syncFromTable: false));
+    }
+
     private IEnumerable<string> GetSelectedOrAllTextSegmentsForEdit()
     {
         if (editorMode == EtwEditorMode.Spreadsheet)
@@ -2732,6 +2972,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             Header = "(None)",
             IsCheckable = true,
             IsChecked = previouslySelected is null,
+            StaysOpenOnClick = true,
         };
         noneItem.Click += GrabTemplateMenuItem_Click;
         grabTemplateMenuItem.Items.Add(noneItem);
@@ -2744,6 +2985,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
                 IsCheckable = true,
                 IsChecked = previouslySelected?.Id == template.Id,
                 Tag = template,
+                StaysOpenOnClick = true,
             };
             templateMenuItem.Click += GrabTemplateMenuItem_Click;
             grabTemplateMenuItem.Items.Add(templateMenuItem);
@@ -2844,6 +3086,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
                 Tag = language,
                 IsCheckable = true,
                 IsChecked = i == selectedIndex,
+                StaysOpenOnClick = true,
             };
             languageMenuItem.Click += LanguageMenuItem_Click;
             captureMenuItem.Items.Add(languageMenuItem);
@@ -3084,7 +3327,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         {
             // Set filter for file extension and default file extension 
             DefaultExt = ".txt",
-            Filter = OpenDocumentFilter,
+            Filter = FileUtilities.GetOpenDocumentFilter(),
             DefaultDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
         };
 
@@ -3404,7 +3647,13 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         {
             try
             {
-                string textFromClipboard = await dataPackageView.GetTextAsync();
+                string textFromClipboard;
+                if (editorMode == EtwEditorMode.Text
+                    && ClipboardUtilities.TryGetHtmlTableAsTabSeparated(out string htmlTableText))
+                    textFromClipboard = htmlTableText;
+                else
+                    textFromClipboard = await dataPackageView.GetTextAsync();
+
                 System.Windows.Application.Current.Dispatcher.Invoke(new Action(() => { AddCopiedTextToTextBox(textFromClipboard); }));
             }
             catch (Exception ex)
@@ -3940,6 +4189,9 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     {
         _ = CommandBindings.Add(new CommandBinding(ApplicationCommands.Undo, SpreadsheetUndoExecuted, SpreadsheetUndoCanExecute));
         _ = CommandBindings.Add(new CommandBinding(ApplicationCommands.Redo, SpreadsheetRedoExecuted, SpreadsheetRedoCanExecute));
+        _ = CommandBindings.Add(new CommandBinding(ApplicationCommands.Cut, SpreadsheetCutExecuted, SpreadsheetCopyCanExecute));
+        _ = CommandBindings.Add(new CommandBinding(ApplicationCommands.Copy, SpreadsheetCopyExecuted, SpreadsheetCopyCanExecute));
+        _ = CommandBindings.Add(new CommandBinding(ApplicationCommands.Paste, SpreadsheetPasteExecuted, SpreadsheetPasteCanExecute));
 
         RoutedCommand newFullscreenGrab = new();
         _ = newFullscreenGrab.InputGestures.Add(new KeyGesture(Key.F, ModifierKeys.Control));

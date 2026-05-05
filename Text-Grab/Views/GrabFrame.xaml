@@ -129,7 +129,9 @@
                             x:Name="IsTopmostMenuItem"
                             Header="Keep Grab Frame On Top"
                             IsCheckable="True"
-                            IsChecked="{Binding Topmost, ElementName=GrabFrameWindow, Mode=TwoWay}" />
+                            IsChecked="{Binding Topmost,
+                                                ElementName=GrabFrameWindow,
+                                                Mode=TwoWay}" />
                         <Separator />
                         <MenuItem x:Name="TranslationMenuItem" Header="Translation to...">
                             <MenuItem
@@ -208,7 +210,7 @@
                             InputGestureText="Ctrl + Shift + V" />
                         <MenuItem
                             Click="OpenImageMenuItem_Click"
-                            Header="Open Image..."
+                            Header="Open Image or PDF..."
                             InputGestureText="Ctrl + O" />
                         <MenuItem x:Name="OpenRecentGrabsMenuItem" Header="Recent Grabs" />
                         <Separator />
@@ -289,31 +291,41 @@
                             Checked="AspectRationMI_Checked"
                             Header="Maintain Aspect Ratio"
                             IsCheckable="True"
-                            IsChecked="{Binding IsChecked, ElementName=AspectRationMI, Mode=TwoWay}"
+                            IsChecked="{Binding IsChecked,
+                                                ElementName=AspectRationMI,
+                                                Mode=TwoWay}"
                             Unchecked="AspectRationMI_Checked" />
                         <MenuItem
                             Click="FreezeToggleButton_Click"
                             Header="Freeze Image In Frame"
                             InputGestureText="F"
                             IsCheckable="True"
-                            IsChecked="{Binding IsChecked, ElementName=FreezeToggleButton, Mode=TwoWay}" />
+                            IsChecked="{Binding IsChecked,
+                                                ElementName=FreezeToggleButton,
+                                                Mode=TwoWay}" />
                         <MenuItem
                             Click="TableToggleButton_Click"
                             Header="Analyze as a Table"
                             InputGestureText="T"
                             IsCheckable="True"
-                            IsChecked="{Binding IsChecked, ElementName=TableToggleButton, Mode=TwoWay}" />
+                            IsChecked="{Binding IsChecked,
+                                                ElementName=TableToggleButton,
+                                                Mode=TwoWay}" />
                         <MenuItem
                             Click="EditToggleButton_Click"
                             Header="Allow recognized words to be edited"
                             IsCheckable="True"
-                            IsChecked="{Binding IsChecked, ElementName=EditToggleButton, Mode=TwoWay}" />
+                            IsChecked="{Binding IsChecked,
+                                                ElementName=EditToggleButton,
+                                                Mode=TwoWay}" />
                         <MenuItem
                             Click="EditTextBTN_Click"
                             Header="Send results to an Edit Text Window"
                             InputGestureText="E"
                             IsCheckable="True"
-                            IsChecked="{Binding IsChecked, ElementName=EditTextToggleButton, Mode=TwoWay}" />
+                            IsChecked="{Binding IsChecked,
+                                                ElementName=EditTextToggleButton,
+                                                Mode=TwoWay}" />
                         <Separator />
                         <MenuItem
                             x:Name="InvertSelectionMenuItem"
@@ -515,6 +527,15 @@
                                     Opacity="0"
                                     Stretch="Uniform" />
                                 <Canvas
+                                    x:Name="PdfTextCanvas"
+                                    Margin="0"
+                                    ClipToBounds="True"
+                                    ContextMenu="{Binding ContextMenu,
+                                                          ElementName=RectanglesCanvas}"
+                                    MouseDown="RectanglesCanvas_MouseDown"
+                                    MouseMove="RectanglesCanvas_MouseMove"
+                                    MouseUp="RectanglesCanvas_MouseUp" />
+                                <Canvas
                                     x:Name="RectanglesCanvas"
                                     Margin="0"
                                     Background="Transparent"
@@ -531,7 +552,7 @@
                                                 InputGestureText="Ctrl + Shift + V" />
                                             <MenuItem
                                                 Click="OpenImageMenuItem_Click"
-                                                Header="Open Image..."
+                                                Header="Open Image or PDF..."
                                                 InputGestureText="Ctrl + O" />
                                             <Separator />
                                             <MenuItem
@@ -790,7 +811,9 @@
                         Foreground="{ui:ThemeResource TextFillColorSecondaryBrush}"
                         IsHitTestVisible="False"
                         Opacity="0.5"
-                        Visibility="{Binding Visibility, ElementName=SearchBox, Mode=OneWay}" />
+                        Visibility="{Binding Visibility,
+                                             ElementName=SearchBox,
+                                             Mode=OneWay}" />
                     <controls:CollapsibleButton
                         x:Name="ClearBTN"
                         Grid.Column="1"
@@ -856,6 +879,36 @@
                         Grid.Column="4"
                         Margin="6,0"
                         Orientation="Horizontal">
+                        <StackPanel
+                            x:Name="PdfPagePanel"
+                            Margin="0,0,6,0"
+                            Orientation="Horizontal"
+                            Visibility="Collapsed">
+                            <Button
+                                x:Name="PreviousPdfPageButton"
+                                Width="30"
+                                Height="30"
+                                Padding="0"
+                                Click="PreviousPdfPageButton_Click"
+                                ToolTip="Previous PDF page">
+                                <ui:SymbolIcon Symbol="ChevronLeft24" />
+                            </Button>
+                            <TextBlock
+                                x:Name="PdfPageTextBlock"
+                                Margin="6,0"
+                                VerticalAlignment="Center"
+                                Text="Page 1 / 1" />
+                            <Button
+                                x:Name="NextPdfPageButton"
+                                Width="30"
+                                Height="30"
+                                Margin="6,0,0,0"
+                                Padding="0"
+                                Click="NextPdfPageButton_Click"
+                                ToolTip="Next PDF page">
+                                <ui:SymbolIcon Symbol="ChevronRight24" />
+                            </Button>
+                        </StackPanel>
                         <controls:CollapsibleButton
                             x:Name="RefreshBTN"
                             Width="30"
