@@ -1098,6 +1098,15 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
 
+        if (e.Key == Key.C
+            && (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+            && !IsSpreadsheetCellEditorFocused())
+        {
+            e.Handled = true;
+            _ = TryCopySpreadsheetSelectionToClipboard(GetSelectedSpreadsheetCellCoordinates());
+            return;
+        }
+
         if (e.Key == Key.X
             && (Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
             && !IsSpreadsheetCellEditorFocused())

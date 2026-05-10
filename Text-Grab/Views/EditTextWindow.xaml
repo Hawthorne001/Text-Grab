@@ -758,6 +758,7 @@
                     AlternatingRowBackground="{DynamicResource ApplicationBackgroundBrush}"
                     AutoGenerateColumns="False"
                     Background="Transparent"
+                    ClipboardCopyMode="None"
                     BeginningEdit="SpreadsheetDataGrid_BeginningEdit"
                     CanUserAddRows="False"
                     CanUserSortColumns="False"
