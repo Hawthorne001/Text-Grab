@@ -15,6 +15,8 @@ using Text_Grab.Models;
 using Text_Grab.Properties;
 using Text_Grab.Utilities;
 using Text_Grab.Views;
+using SymbolIcon = Wpf.Ui.Controls.SymbolIcon;
+using SymbolRegular = Wpf.Ui.Controls.SymbolRegular;
 
 namespace Text_Grab.Services;
 
@@ -210,7 +212,17 @@ public class HistoryService
                 catch { menuItem.IsEnabled = false; }
             };
 
-            menuItem.Header = $"{history.CaptureDateTime.Humanize()} | {history.TextContent.MakeStringSingleLine().Truncate(20)}";
+            string snippet = history.TextContent.Trim().Replace("\t", " ").MakeStringSingleLine().Truncate(40);
+            menuItem.Header = $"{history.CaptureDateTime.Humanize().Trim()} | {snippet}";
+            menuItem.Icon = new SymbolIcon
+            {
+                Symbol = history.EditorMode switch
+                {
+                    EtwEditorMode.Spreadsheet => SymbolRegular.Table24,
+                    EtwEditorMode.Markdown => SymbolRegular.Markdown20,
+                    _ => SymbolRegular.TextT24,
+                }
+            };
             recentGrabsMenuItem.Items.Add(menuItem);
         }
     }
