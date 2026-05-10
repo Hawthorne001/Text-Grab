@@ -37,6 +37,8 @@ using Windows.Storage;
 using Windows.Storage.Streams;
 using ContextMenu = System.Windows.Controls.ContextMenu;
 using MenuItem = System.Windows.Controls.MenuItem;
+using SymbolIcon = Wpf.Ui.Controls.SymbolIcon;
+using SymbolRegular = Wpf.Ui.Controls.SymbolRegular;
 
 namespace Text_Grab;
 
@@ -3146,7 +3148,17 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             if (PassedTextControl.Text == history.TextContent)
                 menuItem.IsEnabled = false;
 
-            menuItem.Header = $"{history.CaptureDateTime.Humanize()} | {history.TextContent.MakeStringSingleLine().Truncate(20)}";
+            string snippet = history.TextContent.Trim().Replace("\t", " ").MakeStringSingleLine().Truncate(40);
+            menuItem.Header = $"{history.CaptureDateTime.Humanize().Trim()} | {snippet}";
+            menuItem.Icon = new SymbolIcon
+            {
+                Symbol = history.EditorMode switch
+                {
+                    EtwEditorMode.Spreadsheet => SymbolRegular.Table24,
+                    EtwEditorMode.Markdown => SymbolRegular.Markdown20,
+                    _ => SymbolRegular.TextT24,
+                }
+            };
             OpenRecentMenuItem.Items.Add(menuItem);
         }
     }
