@@ -36,6 +36,11 @@ public class ButtonInfo
     /// </summary>
     public string TemplateId { get; set; } = string.Empty;
 
+    /// <summary>
+    /// When true, this button requires a Copilot+ PC (Windows AI capable device) to function.
+    /// </summary>
+    public bool RequiresCopilotPlus { get; set; } = false;
+
     public ButtonInfo()
     {
 
@@ -636,7 +641,7 @@ public class ButtonInfo
             OrderNumber = 6.98,
             ButtonText = "Enter Markdown Mode",
             ClickEvent = "EnterMarkdownMode_Click",
-            SymbolIcon = SymbolRegular.DocumentTextToolbox24
+            SymbolIcon = SymbolRegular.Markdown20
         },
         new()
         {
@@ -769,119 +774,136 @@ public class ButtonInfo
             OrderNumber = 8.1,
             ButtonText = "Summarize Paragraph",
             ClickEvent = "SummarizeMenuItem_Click",
-            SymbolIcon = SymbolRegular.BotSparkle24
+            SymbolIcon = SymbolRegular.BotSparkle24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.2,
             ButtonText = "Rewrite with Local AI",
             ClickEvent = "RewriteMenuItem_Click",
-            SymbolIcon = SymbolRegular.BotSparkle24
+            SymbolIcon = SymbolRegular.BotSparkle24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.3,
             ButtonText = "Convert to Table",
             ClickEvent = "ConvertTableMenuItem_Click",
-            SymbolIcon = SymbolRegular.BotSparkle24
+            SymbolIcon = SymbolRegular.BotSparkle24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.4,
             ButtonText = "Translate to System Language",
             ClickEvent = "TranslateToSystemLanguageMenuItem_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.41,
             ButtonText = "Translate to English",
             ClickEvent = "TranslateToEnglish_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.42,
             ButtonText = "Translate to Spanish",
             ClickEvent = "TranslateToSpanish_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.43,
             ButtonText = "Translate to French",
             ClickEvent = "TranslateToFrench_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.44,
             ButtonText = "Translate to German",
             ClickEvent = "TranslateToGerman_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.45,
             ButtonText = "Translate to Italian",
             ClickEvent = "TranslateToItalian_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.46,
             ButtonText = "Translate to Portuguese",
             ClickEvent = "TranslateToPortuguese_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.47,
             ButtonText = "Translate to Russian",
             ClickEvent = "TranslateToRussian_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.48,
             ButtonText = "Translate to Japanese",
             ClickEvent = "TranslateToJapanese_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.49,
             ButtonText = "Translate to Chinese (Simplified)",
             ClickEvent = "TranslateToChineseSimplified_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.5,
             ButtonText = "Translate to Korean",
             ClickEvent = "TranslateToKorean_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.51,
             ButtonText = "Translate to Arabic",
             ClickEvent = "TranslateToArabic_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.52,
             ButtonText = "Translate to Hindi",
             ClickEvent = "TranslateToHindi_Click",
-            SymbolIcon = SymbolRegular.Translate24
+            SymbolIcon = SymbolRegular.Translate24,
+            RequiresCopilotPlus = true
         },
         new()
         {
             OrderNumber = 8.6,
             ButtonText = "Extract RegEx",
             ClickEvent = "ExtractRegexMenuItem_Click",
-            SymbolIcon = SymbolRegular.TextWholeWord20
+            SymbolIcon = SymbolRegular.TextWholeWord20,
+            RequiresCopilotPlus = true
         },
         new()
         {
