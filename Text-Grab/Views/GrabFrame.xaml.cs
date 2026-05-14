@@ -1934,7 +1934,7 @@ public partial class GrabFrame : Window
 
         if (destinationTextBox is null)
         {
-            EditTextWindow etw = WindowUtilities.OpenOrActivateWindow<EditTextWindow>();
+            EditTextWindow etw = WindowUtilities.OpenOrActivateEditTextWindow(TableToggleButton.IsChecked is true);
             destinationTextBox = etw.GetMainTextBox();
         }
 

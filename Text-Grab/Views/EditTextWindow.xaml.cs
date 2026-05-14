@@ -248,6 +248,8 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         return PassedTextControl;
     }
 
+    internal void EnterSpreadsheetMode() => SetEditorMode(EtwEditorMode.Spreadsheet);
+
     public async Task OcrAllImagesInFolder(string folderPath, OcrDirectoryOptions options)
     {
         IEnumerable<string>? files = null;
