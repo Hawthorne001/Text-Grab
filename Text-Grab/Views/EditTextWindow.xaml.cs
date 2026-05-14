@@ -125,6 +125,19 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         SaveToHistory,
     }
 
+    private sealed class SpreadsheetCellTextWrappingConverter(EditTextWindow owner, int columnIndex) : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return owner.GetSpreadsheetCellTextWrapping(value, columnIndex);
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        {
+            return System.Windows.Data.Binding.DoNothing;
+        }
+    }
+
     #endregion Fields
 
     #region Constructors
@@ -444,7 +457,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         Language = xmlDefaultLang;
     }
 
-    private void ApplySpreadsheetDocumentChange(Action<EditTextTableDocument> changeAction, int? focusRow = null, int? focusColumn = null)
+    private void ApplySpreadsheetDocumentChange(
+        Action<EditTextTableDocument> changeAction,
+        int? focusRow = null,
+        int? focusColumn = null,
+        bool beginEdit = true)
     {
         CommitSpreadsheetEditsAndCapturePendingHistory();
         SpreadsheetUndoState? beforeChange = CreateCurrentSpreadsheetUndoState(syncFromTable: true);
@@ -461,7 +478,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         if (focusRow.HasValue && focusColumn.HasValue)
         {
             Dispatcher.BeginInvoke(
-                () => FocusSpreadsheetCell(focusRow.Value, focusColumn.Value),
+                () => FocusSpreadsheetCell(focusRow.Value, focusColumn.Value, beginEdit),
                 DispatcherPriority.Background);
         }
     }
@@ -709,12 +726,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         object rowItem = SpreadsheetDataGrid.Items[rowIndex];
         DataGridColumn column = SpreadsheetDataGrid.Columns[columnIndex];
 
-        SpreadsheetDataGrid.ScrollIntoView(rowItem, column);
-        SpreadsheetDataGrid.SelectedCells.Clear();
-        SpreadsheetDataGrid.CurrentCell = new DataGridCellInfo(rowItem, column);
-        SpreadsheetDataGrid.SelectedCells.Add(new DataGridCellInfo(rowItem, column));
-        UpdateSelectedSpreadsheetCellCoordinates();
-        SpreadsheetDataGrid.Focus();
+        SelectSpreadsheetCell(rowItem, column, clearExistingSelection: true);
 
         if (beginEdit)
             SpreadsheetDataGrid.BeginEdit();
@@ -819,6 +831,8 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             {
                 Header = EditTextTableDocument.GetSpreadsheetColumnLabel(columnIndex),
                 Binding = new System.Windows.Data.Binding($"[{column.ColumnName}]"),
+                ElementStyle = CreateSpreadsheetDisplayTextStyle(columnIndex),
+                EditingElementStyle = CreateSpreadsheetEditingTextStyle(columnIndex),
                 MinWidth = SpreadsheetDefaultColumnWidth,
                 Width = new DataGridLength(Math.Max(SpreadsheetDefaultColumnWidth, width)),
             };
@@ -1199,6 +1213,19 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
 
+        if (FindVisualParent<System.Windows.Controls.DataGridCell>(e.OriginalSource as DependencyObject) is System.Windows.Controls.DataGridCell dataGridCell
+            && dataGridCell.DataContext is not null
+            && dataGridCell.Column is DataGridColumn clickedCellColumn)
+        {
+            spreadsheetContextRowIndex = SpreadsheetDataGrid.Items.IndexOf(dataGridCell.DataContext);
+            spreadsheetContextColumnIndex = clickedCellColumn.DisplayIndex;
+
+            bool isCellAlreadySelected = GetSelectedSpreadsheetCellCoordinates().Contains((spreadsheetContextRowIndex.Value, spreadsheetContextColumnIndex.Value));
+            SelectSpreadsheetCell(dataGridCell.DataContext, clickedCellColumn, clearExistingSelection: !isCellAlreadySelected);
+            SpreadsheetDataGrid.ContextMenu = FindResource("SpreadsheetContextMenu") as ContextMenu;
+            return;
+        }
+
         SpreadsheetDataGrid.ContextMenu = FindResource("SpreadsheetContextMenu") as ContextMenu;
     }
 
@@ -1434,6 +1461,59 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
+    internal static bool AreSpreadsheetDocumentCellsWrapped(
+        EditTextTableDocument document,
+        IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(cellCoordinates);
+
+        document.EnsureMinimumSize();
+
+        List<(int RowIndex, int ColumnIndex)> validCoordinates = [.. cellCoordinates
+            .Distinct()
+            .Where(cell => cell.RowIndex >= 0
+                && cell.RowIndex < document.Rows.Count
+                && cell.ColumnIndex >= 0
+                && cell.ColumnIndex < document.ColumnNames.Count)];
+
+        return validCoordinates.Count > 0
+            && validCoordinates.All(cell => document.IsCellWrapped(cell.RowIndex, cell.ColumnIndex));
+    }
+
+    internal static void SetSpreadsheetDocumentCellWrapState(
+        EditTextTableDocument document,
+        IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates,
+        bool shouldWrap)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(cellCoordinates);
+
+        document.EnsureMinimumSize();
+
+        foreach ((int rowIndex, int columnIndex) in cellCoordinates.Distinct())
+            document.SetCellWrap(rowIndex, columnIndex, shouldWrap);
+    }
+
+    internal static void ClearSpreadsheetDocumentRowHeights(EditTextTableDocument document, IEnumerable<int> rowIndices)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(rowIndices);
+
+        document.EnsureMinimumSize();
+
+        foreach (int rowIndex in rowIndices.Distinct())
+            document.SetRowHeight(rowIndex, null);
+    }
+
+    internal static double? GetSpreadsheetPersistedRowHeight(double rowHeight)
+    {
+        if (double.IsNaN(rowHeight) || double.IsInfinity(rowHeight) || rowHeight <= 0)
+            return null;
+
+        return rowHeight;
+    }
+
     private void UpdateSelectedSpreadsheetCellCoordinates()
     {
         selectedSpreadsheetCellCoordinates = [.. SpreadsheetDataGrid.SelectedCells
@@ -1447,6 +1527,21 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private List<(int RowIndex, int ColumnIndex)> GetSelectedSpreadsheetCellCoordinates()
     {
         return [.. selectedSpreadsheetCellCoordinates];
+    }
+
+    private List<(int RowIndex, int ColumnIndex)> GetSelectedOrCurrentSpreadsheetCellCoordinates()
+    {
+        List<(int RowIndex, int ColumnIndex)> selectedCells = GetSelectedSpreadsheetCellCoordinates();
+        if (selectedCells.Count > 0)
+            return selectedCells;
+
+        int rowIndex = spreadsheetContextRowIndex ?? SpreadsheetDataGrid.Items.IndexOf(SpreadsheetDataGrid.CurrentItem);
+        int columnIndex = spreadsheetContextColumnIndex ?? SpreadsheetDataGrid.CurrentCell.Column?.DisplayIndex ?? -1;
+
+        if (rowIndex < 0 || columnIndex < 0)
+            return [];
+
+        return [(rowIndex, columnIndex)];
     }
 
     private List<(int RowIndex, int ColumnIndex)> GetSelectedOrPopulatedSpreadsheetCellCoordinates()
@@ -1656,8 +1751,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         if (rowIndex < 0)
             return;
 
-        double height = !double.IsNaN(row.Height) && row.Height > 0 ? row.Height : row.ActualHeight;
-        tableDocument.SetRowHeight(rowIndex, height);
+        double? height = GetSpreadsheetPersistedRowHeight(row.Height);
+        if (!height.HasValue)
+            return;
+
+        tableDocument.SetRowHeight(rowIndex, height.Value);
     }
 
     private void EditorModeMenuItem_Click(object sender, RoutedEventArgs e)
@@ -1766,7 +1864,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             if (rowIndex < 0)
                 continue;
 
-            double height = !double.IsNaN(row.Height) && row.Height > 0 ? row.Height : row.ActualHeight;
+            double? height = GetSpreadsheetPersistedRowHeight(row.Height);
             tableDocument.SetRowHeight(rowIndex, height);
         }
     }
@@ -1850,6 +1948,53 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         return null;
     }
 
+    private System.Windows.Data.Binding CreateSpreadsheetCellTextWrappingBinding(int columnIndex)
+    {
+        return new System.Windows.Data.Binding
+        {
+            Converter = new SpreadsheetCellTextWrappingConverter(this, columnIndex),
+            Mode = BindingMode.OneWay
+        };
+    }
+
+    private Style CreateSpreadsheetDisplayTextStyle(int columnIndex)
+    {
+        Style style = new(typeof(TextBlock));
+        style.Setters.Add(new Setter(TextBlock.TextWrappingProperty, CreateSpreadsheetCellTextWrappingBinding(columnIndex)));
+        style.Setters.Add(new Setter(TextBlock.VerticalAlignmentProperty, VerticalAlignment.Top));
+        return style;
+    }
+
+    private Style CreateSpreadsheetEditingTextStyle(int columnIndex)
+    {
+        Style style = new(typeof(System.Windows.Controls.TextBox));
+        style.Setters.Add(new Setter(System.Windows.Controls.TextBox.TextWrappingProperty, CreateSpreadsheetCellTextWrappingBinding(columnIndex)));
+        style.Setters.Add(new Setter(System.Windows.Controls.TextBox.AcceptsReturnProperty, true));
+        style.Setters.Add(new Setter(System.Windows.Controls.TextBox.VerticalContentAlignmentProperty, VerticalAlignment.Top));
+        return style;
+    }
+
+    private TextWrapping GetSpreadsheetCellTextWrapping(object? rowItem, int columnIndex)
+    {
+        if (tableDocument is null || rowItem is not DataRowView dataRowView)
+            return TextWrapping.NoWrap;
+
+        int rowIndex = dataRowView.Row.Table.Rows.IndexOf(dataRowView.Row);
+        if (rowIndex < 0)
+            return TextWrapping.NoWrap;
+
+        return tableDocument.IsCellWrapped(rowIndex, columnIndex)
+            ? TextWrapping.Wrap
+            : TextWrapping.NoWrap;
+    }
+
+    private static MenuItem? GetContextMenuItem(ContextMenu contextMenu, string itemTag)
+    {
+        return contextMenu.Items
+            .OfType<MenuItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag as string, itemTag, StringComparison.Ordinal));
+    }
+
     private void SelectSpreadsheetColumn(int columnIndex)
     {
         if (columnIndex < 0 || columnIndex >= SpreadsheetDataGrid.Columns.Count)
@@ -1876,6 +2021,25 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             SpreadsheetDataGrid.ScrollIntoView(firstRowItem, column);
         }
 
+        UpdateSelectedSpreadsheetCellCoordinates();
+        SpreadsheetDataGrid.Focus();
+        UpdateLineAndColumnText();
+    }
+
+    private void SelectSpreadsheetCell(object rowItem, DataGridColumn column, bool clearExistingSelection)
+    {
+        if (clearExistingSelection)
+        {
+            SpreadsheetDataGrid.SelectedItems.Clear();
+            SpreadsheetDataGrid.SelectedCells.Clear();
+        }
+
+        SpreadsheetDataGrid.CurrentCell = new DataGridCellInfo(rowItem, column);
+
+        if (!SpreadsheetDataGrid.SelectedCells.Any(cell => ReferenceEquals(cell.Item, rowItem) && cell.Column == column))
+            SpreadsheetDataGrid.SelectedCells.Add(new DataGridCellInfo(rowItem, column));
+
+        SpreadsheetDataGrid.ScrollIntoView(rowItem, column);
         UpdateSelectedSpreadsheetCellCoordinates();
         SpreadsheetDataGrid.Focus();
         UpdateLineAndColumnText();
@@ -5518,6 +5682,47 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private void WindowMenuItem_SubmenuOpened(object sender, RoutedEventArgs e)
     {
         OpenLastAsGrabFrameMenuItem.IsEnabled = Singleton<HistoryService>.Instance.HasAnyHistoryWithImages();
+    }
+
+    private void SpreadsheetContextMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu contextMenu)
+            return;
+
+        MenuItem? wrapTextMenuItem = GetContextMenuItem(contextMenu, "SpreadsheetWrapTextToggle");
+        if (wrapTextMenuItem is null)
+            return;
+
+        EnsureSpreadsheetDocumentFromText();
+
+        List<(int RowIndex, int ColumnIndex)> targetCells = GetSelectedOrCurrentSpreadsheetCellCoordinates();
+        bool hasTargetCells = tableDocument is not null && targetCells.Count > 0;
+
+        wrapTextMenuItem.IsEnabled = hasTargetCells;
+        wrapTextMenuItem.IsChecked = hasTargetCells && AreSpreadsheetDocumentCellsWrapped(tableDocument!, targetCells);
+    }
+
+    private void ToggleSpreadsheetWrapTextMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem)
+            return;
+
+        List<(int RowIndex, int ColumnIndex)> targetCells = GetSelectedOrCurrentSpreadsheetCellCoordinates();
+        if (targetCells.Count == 0)
+            return;
+
+        int focusRow = Math.Max(0, spreadsheetContextRowIndex ?? SpreadsheetDataGrid.Items.IndexOf(SpreadsheetDataGrid.CurrentItem));
+        int focusColumn = Math.Max(0, spreadsheetContextColumnIndex ?? SpreadsheetDataGrid.CurrentCell.Column?.DisplayIndex ?? 0);
+
+        ApplySpreadsheetDocumentChange(
+            document =>
+            {
+                SetSpreadsheetDocumentCellWrapState(document, targetCells, menuItem.IsChecked);
+                ClearSpreadsheetDocumentRowHeights(document, targetCells.Select(cell => cell.RowIndex));
+            },
+            focusRow,
+            focusColumn,
+            beginEdit: false);
     }
 
     private void WrapTextCHBX_Checked(object sender, RoutedEventArgs e)

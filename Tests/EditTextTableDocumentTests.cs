@@ -78,6 +78,7 @@ public class EditTextTableDocumentTests
         document.Rows[0][2] = "extra";
         document.SetColumnWidth(0, 180);
         document.SetRowHeight(0, 36);
+        document.SetCellWrap(0, 1, true);
 
         string json = document.SerializeToJson();
         EditTextTableDocument? restored = EditTextTableDocument.TryDeserialize(json);
@@ -88,6 +89,7 @@ public class EditTextTableDocumentTests
         Assert.Equal(document.SerializeToText(), restored.SerializeToText());
         Assert.Equal(180, restored.ColumnWidths[0]);
         Assert.Equal(36, restored.RowHeights[0]);
+        Assert.True(restored.IsCellWrapped(0, 1));
         Assert.True(JsonDocument.Parse(json).RootElement.TryGetProperty("ColumnCount", out _));
     }
 
@@ -139,6 +141,7 @@ public class EditTextTableDocumentTests
         source.SetColumnWidth(1, 240);
         source.SetRowHeight(0, 28);
         source.SetRowHeight(1, 40);
+        source.SetCellWrap(1, 1, true);
 
         EditTextTableDocument target = EditTextTableDocument.CreateFromText("1\t2\r\n3\t4\r\n5\t6");
         target.ApplyViewMetricsFrom(source);
@@ -148,6 +151,7 @@ public class EditTextTableDocumentTests
         Assert.Equal(28, target.RowHeights[0]);
         Assert.Equal(40, target.RowHeights[1]);
         Assert.Null(target.RowHeights[2]);
+        Assert.True(target.IsCellWrapped(1, 1));
     }
 
     [Fact]
@@ -159,6 +163,7 @@ public class EditTextTableDocumentTests
             minimumColumnCount: 3);
         document.SetColumnWidth(0, 180);
         document.SetRowHeight(0, 36);
+        document.SetCellWrap(0, 2, true);
 
         document.Transpose();
 
@@ -169,5 +174,25 @@ public class EditTextTableDocumentTests
         Assert.Equal(2, document.MinimumColumnCount);
         Assert.All(document.ColumnWidths.Take(document.ColumnCount), width => Assert.Null(width));
         Assert.All(document.RowHeights.Take(document.RowCount), height => Assert.Null(height));
+        Assert.True(document.IsCellWrapped(2, 0));
+    }
+
+    [Fact]
+    public void WrappedCells_MoveWithInsertedMovedAndDeletedRowsAndColumns()
+    {
+        EditTextTableDocument document = EditTextTableDocument.CreateFromText("A\tB\tC\r\n1\t2\t3\r\nx\ty\tz");
+        document.SetCellWrap(1, 1, true);
+
+        document.InsertRow(1);
+        document.InsertColumn(1);
+        Assert.True(document.IsCellWrapped(2, 2));
+
+        document.MoveRow(2, 0);
+        document.MoveColumn(2, 0);
+        Assert.True(document.IsCellWrapped(0, 0));
+
+        document.DeleteRow(0);
+        document.DeleteColumn(0);
+        Assert.False(document.WrappedCells.Any());
     }
 }

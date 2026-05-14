@@ -79,13 +79,19 @@
             <Separator />
             <MenuItem Command="ApplicationCommands.SelectAll" />
         </ContextMenu>
-        <ContextMenu x:Key="SpreadsheetContextMenu">
+        <ContextMenu x:Key="SpreadsheetContextMenu" Opened="SpreadsheetContextMenu_Opened">
             <MenuItem Click="AddSpreadsheetRowMenuItem_Click" Header="Add Row Below" />
             <MenuItem Click="AddSpreadsheetColumnMenuItem_Click" Header="Add Column Right" />
             <Separator />
             <MenuItem Command="ApplicationCommands.Cut" />
             <MenuItem Command="ApplicationCommands.Copy" />
             <MenuItem Command="ApplicationCommands.Paste" />
+            <Separator />
+            <MenuItem
+                Click="ToggleSpreadsheetWrapTextMenuItem_Click"
+                Header="Wrap Text"
+                IsCheckable="True"
+                Tag="SpreadsheetWrapTextToggle" />
             <Separator />
             <MenuItem Click="CopySpreadsheetRowsMenuItem_Click" Header="Copy Selected Rows" />
             <MenuItem Click="CopySpreadsheetColumnMenuItem_Click" Header="Copy Current Column" />

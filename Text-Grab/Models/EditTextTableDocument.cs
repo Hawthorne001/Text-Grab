@@ -24,6 +24,8 @@ public enum EtwStructuredTextFormat
     Xml
 }
 
+public sealed record EditTextTableWrappedCell(int RowIndex, int ColumnIndex);
+
 public sealed class EditTextTableDocument
 {
     public const int DefaultMinimumRowCount = 25;
@@ -56,6 +58,8 @@ public sealed class EditTextTableDocument
     public List<double?> ColumnWidths { get; set; } = [];
 
     public List<double?> RowHeights { get; set; } = [];
+
+    public List<EditTextTableWrappedCell> WrappedCells { get; set; } = [];
 
     public static EditTextTableDocument CreateFromText(
         string? text,
@@ -120,6 +124,10 @@ public sealed class EditTextTableDocument
         EnsureMinimumSize();
 
         int insertIndex = Math.Clamp(rowIndex, 0, RowCount);
+        WrappedCells = [.. WrappedCells
+            .Select(cell => cell.RowIndex >= insertIndex
+                ? cell with { RowIndex = cell.RowIndex + 1 }
+                : cell)];
         Rows.Insert(insertIndex, Enumerable.Repeat(string.Empty, ColumnNames.Count).ToList());
         RowHeights.Insert(insertIndex, null);
         RowCount++;
@@ -133,6 +141,10 @@ public sealed class EditTextTableDocument
         int insertIndex = Math.Clamp(columnIndex, 0, ColumnCount);
         string nameToInsert = EnsureUniqueColumnName(columnName ?? GetDefaultColumnName(insertIndex), ColumnNames);
 
+        WrappedCells = [.. WrappedCells
+            .Select(cell => cell.ColumnIndex >= insertIndex
+                ? cell with { ColumnIndex = cell.ColumnIndex + 1 }
+                : cell)];
         ColumnNames.Insert(insertIndex, nameToInsert);
         ColumnWidths.Insert(insertIndex, null);
         foreach (List<string> row in Rows)
@@ -149,6 +161,11 @@ public sealed class EditTextTableDocument
         if (rowIndex < 0 || rowIndex >= RowCount)
             return;
 
+        WrappedCells = [.. WrappedCells
+            .Where(cell => cell.RowIndex != rowIndex)
+            .Select(cell => cell.RowIndex > rowIndex
+                ? cell with { RowIndex = cell.RowIndex - 1 }
+                : cell)];
         Rows.RemoveAt(rowIndex);
         if (rowIndex < RowHeights.Count)
             RowHeights.RemoveAt(rowIndex);
@@ -162,6 +179,11 @@ public sealed class EditTextTableDocument
         if (columnIndex < 0 || columnIndex >= ColumnCount)
             return;
 
+        WrappedCells = [.. WrappedCells
+            .Where(cell => cell.ColumnIndex != columnIndex)
+            .Select(cell => cell.ColumnIndex > columnIndex
+                ? cell with { ColumnIndex = cell.ColumnIndex - 1 }
+                : cell)];
         ColumnNames.RemoveAt(columnIndex);
         if (columnIndex < ColumnWidths.Count)
             ColumnWidths.RemoveAt(columnIndex);
@@ -181,6 +203,8 @@ public sealed class EditTextTableDocument
         if (fromIndex < 0 || fromIndex >= RowCount || toIndex < 0 || toIndex >= RowCount || fromIndex == toIndex)
             return;
 
+        WrappedCells = [.. WrappedCells
+            .Select(cell => cell with { RowIndex = TranslateMovedIndex(cell.RowIndex, fromIndex, toIndex) })];
         List<string> row = Rows[fromIndex];
         Rows.RemoveAt(fromIndex);
         Rows.Insert(toIndex, row);
@@ -194,6 +218,8 @@ public sealed class EditTextTableDocument
         if (fromIndex < 0 || fromIndex >= ColumnCount || toIndex < 0 || toIndex >= ColumnCount || fromIndex == toIndex)
             return;
 
+        WrappedCells = [.. WrappedCells
+            .Select(cell => cell with { ColumnIndex = TranslateMovedIndex(cell.ColumnIndex, fromIndex, toIndex) })];
         string columnName = ColumnNames[fromIndex];
         ColumnNames.RemoveAt(fromIndex);
         ColumnNames.Insert(toIndex, columnName);
@@ -239,6 +265,8 @@ public sealed class EditTextTableDocument
         ColumnNames = BuildGenericColumnNames(Math.Max(1, ColumnCount));
         ColumnWidths = [];
         RowHeights = [];
+        WrappedCells = [.. WrappedCells
+            .Select(cell => new EditTextTableWrappedCell(cell.ColumnIndex, cell.RowIndex))];
         EnsureMinimumSize();
     }
 
@@ -288,6 +316,8 @@ public sealed class EditTextTableDocument
 
         while (RowHeights.Count > requiredRows)
             RowHeights.RemoveAt(RowHeights.Count - 1);
+
+        NormalizeWrappedCells();
     }
 
     public void ApplyViewMetricsFrom(EditTextTableDocument source)
@@ -302,6 +332,9 @@ public sealed class EditTextTableDocument
 
         for (int rowIndex = 0; rowIndex < Math.Min(RowHeights.Count, source.RowHeights.Count); rowIndex++)
             RowHeights[rowIndex] = source.RowHeights[rowIndex];
+
+        WrappedCells = [.. source.WrappedCells];
+        NormalizeWrappedCells();
     }
 
     public void SetColumnWidth(int columnIndex, double? width)
@@ -322,6 +355,38 @@ public sealed class EditTextTableDocument
         RowHeights[rowIndex] = NormalizeViewMetric(height);
     }
 
+    public bool IsCellWrapped(int rowIndex, int columnIndex)
+    {
+        EnsureMinimumSize();
+        return WrappedCells.Contains(new EditTextTableWrappedCell(rowIndex, columnIndex));
+    }
+
+    public void SetCellWrap(int rowIndex, int columnIndex, bool shouldWrap)
+    {
+        EnsureMinimumSize();
+
+        if (rowIndex < 0
+            || rowIndex >= Rows.Count
+            || columnIndex < 0
+            || columnIndex >= ColumnNames.Count)
+        {
+            return;
+        }
+
+        EditTextTableWrappedCell wrappedCell = new(rowIndex, columnIndex);
+        if (shouldWrap)
+        {
+            if (!WrappedCells.Contains(wrappedCell))
+                WrappedCells.Add(wrappedCell);
+        }
+        else
+        {
+            WrappedCells.RemoveAll(cell => cell == wrappedCell);
+        }
+
+        NormalizeWrappedCells();
+    }
+
     private string SerializePlainText()
     {
         if (ColumnCount <= 1)
@@ -340,12 +405,41 @@ public sealed class EditTextTableDocument
         items.Insert(toIndex, item);
     }
 
+    private static int TranslateMovedIndex(int currentIndex, int fromIndex, int toIndex)
+    {
+        if (currentIndex == fromIndex)
+            return toIndex;
+
+        if (fromIndex < toIndex && currentIndex > fromIndex && currentIndex <= toIndex)
+            return currentIndex - 1;
+
+        if (toIndex < fromIndex && currentIndex >= toIndex && currentIndex < fromIndex)
+            return currentIndex + 1;
+
+        return currentIndex;
+    }
+
     private static double? NormalizeViewMetric(double? value)
     {
         if (!value.HasValue || double.IsNaN(value.Value) || double.IsInfinity(value.Value) || value.Value <= 0)
             return null;
 
         return value.Value;
+    }
+
+    private void NormalizeWrappedCells()
+    {
+        int maxRowCount = Rows.Count;
+        int maxColumnCount = ColumnNames.Count;
+
+        WrappedCells = [.. WrappedCells
+            .Where(cell => cell.RowIndex >= 0
+                && cell.RowIndex < maxRowCount
+                && cell.ColumnIndex >= 0
+                && cell.ColumnIndex < maxColumnCount)
+            .Distinct()
+            .OrderBy(cell => cell.RowIndex)
+            .ThenBy(cell => cell.ColumnIndex)];
     }
 
     private string SerializeDelimitedText(char delimiter)

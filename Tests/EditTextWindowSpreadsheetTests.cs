@@ -196,4 +196,77 @@ public class EditTextWindowSpreadsheetTests
 
         Assert.Equal("a1\tB!\tc1\r\nA!\tb2\tc2", document.SerializeToText());
     }
+
+    [Fact]
+    public void SetSpreadsheetDocumentCellWrapState_UpdatesOnlyRequestedCells()
+    {
+        EditTextTableDocument document = EditTextTableDocument.CreateFromText("a1\tb1\tc1\r\na2\tb2\tc2");
+
+        EditTextWindow.SetSpreadsheetDocumentCellWrapState(
+            document,
+            [
+                (0, 1),
+                (1, 2),
+                (1, 2),
+                (-1, 0),
+                (9, 9)
+            ],
+            shouldWrap: true);
+
+        Assert.False(document.IsCellWrapped(0, 0));
+        Assert.True(document.IsCellWrapped(0, 1));
+        Assert.False(document.IsCellWrapped(0, 2));
+        Assert.False(document.IsCellWrapped(1, 0));
+        Assert.False(document.IsCellWrapped(1, 1));
+        Assert.True(document.IsCellWrapped(1, 2));
+    }
+
+    [Fact]
+    public void AreSpreadsheetDocumentCellsWrapped_ReturnsTrueOnlyWhenAllValidTargetsAreWrapped()
+    {
+        EditTextTableDocument document = EditTextTableDocument.CreateFromText("a1\tb1\tc1\r\na2\tb2\tc2");
+        document.SetCellWrap(0, 1, true);
+        document.SetCellWrap(1, 2, true);
+
+        Assert.True(EditTextWindow.AreSpreadsheetDocumentCellsWrapped(
+            document,
+            [
+                (0, 1),
+                (1, 2),
+                (1, 2),
+                (-1, 0)
+            ]));
+
+        Assert.False(EditTextWindow.AreSpreadsheetDocumentCellsWrapped(
+            document,
+            [
+                (0, 1),
+                (1, 1)
+            ]));
+    }
+
+    [Fact]
+    public void ClearSpreadsheetDocumentRowHeights_ClearsOnlyRequestedRows()
+    {
+        EditTextTableDocument document = EditTextTableDocument.CreateFromText("a1\tb1\r\na2\tb2");
+        document.SetRowHeight(0, 32);
+        document.SetRowHeight(1, 48);
+
+        EditTextWindow.ClearSpreadsheetDocumentRowHeights(document, [1, 1, -1, 8]);
+
+        Assert.Equal(32, document.RowHeights[0]);
+        Assert.Null(document.RowHeights[1]);
+    }
+
+    [Theory]
+    [InlineData(24d, 24d)]
+    [InlineData(36.5, 36.5)]
+    [InlineData(double.NaN, null)]
+    [InlineData(double.PositiveInfinity, null)]
+    [InlineData(0d, null)]
+    [InlineData(-10d, null)]
+    public void GetSpreadsheetPersistedRowHeight_PersistsOnlyExplicitPositiveHeights(double rowHeight, double? expectedHeight)
+    {
+        Assert.Equal(expectedHeight, EditTextWindow.GetSpreadsheetPersistedRowHeight(rowHeight));
+    }
 }
