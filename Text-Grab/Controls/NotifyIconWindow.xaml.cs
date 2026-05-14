@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Text_Grab.Models;
@@ -17,10 +18,28 @@ namespace Text_Grab.Controls;
 public partial class NotifyIconWindow : Window
 {
     private readonly Settings DefaultSettings = AppUtilities.TextGrabSettings;
+    private HwndSource? windowSource;
 
     public NotifyIconWindow()
     {
         InitializeComponent();
+    }
+
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+
+        nint windowHandle = new WindowInteropHelper(this).Handle;
+        windowSource = HwndSource.FromHwnd(windowHandle);
+        windowSource?.AddHook(NotifyIconWindowMessageHook);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        windowSource?.RemoveHook(NotifyIconWindowMessageHook);
+        windowSource = null;
+
+        base.OnClosed(e);
     }
 
     private void Exit_Click(object sender, RoutedEventArgs e)
@@ -113,6 +132,22 @@ public partial class NotifyIconWindow : Window
     {
         if (!NotifyIcon.IsVisible)
             NotifyIcon.Visibility = Visibility.Visible;
+    }
+
+    private IntPtr NotifyIconWindowMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if ((uint)msg == NativeMethods.WM_TASKBARCREATED)
+            RestoreNotifyIconAfterExplorerRestart();
+
+        return IntPtr.Zero;
+    }
+
+    private void RestoreNotifyIconAfterExplorerRestart()
+    {
+        if (NotifyIcon.IsRegistered)
+            NotifyIcon.Unregister();
+
+        NotifyIcon.Register();
     }
 
     private void LastEditWindow_Click(object sender, RoutedEventArgs e)
