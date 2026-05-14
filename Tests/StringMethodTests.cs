@@ -22,6 +22,12 @@ lines
         Assert.Equal(lineOfText, bodyOfText.MakeStringSingleLine());
     }
 
+    [Fact]
+    public void MakeStringSingleLine_NewlineOnly_ReturnsEmptyString()
+    {
+        Assert.Equal(string.Empty, Environment.NewLine.MakeStringSingleLine());
+    }
+
     [Theory]
     [InlineData("", "")]
     [InlineData("is", "This is test string data")]

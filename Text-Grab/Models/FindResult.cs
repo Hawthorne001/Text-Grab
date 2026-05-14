@@ -13,7 +13,7 @@ public class FindResult
 
     public string PreviewRight { get; set; } = "";
 
-    public int Length => Text.Length;
+    public int Length { get; set; }
 
     public int? RowIndex { get; set; }
 

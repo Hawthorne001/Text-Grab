@@ -2566,9 +2566,10 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
                         RowIndex = row,
                         ColumnIndex = col,
                         Index = m.Index,
-                        Text = m.Value.MakeStringSingleLine(),
+                        Text = TextSearchUtilities.FormatMatchTextForDisplay(m.Value),
                         PreviewLeft = cellValue[previewStart..m.Index],
                         PreviewRight = cellValue[(m.Index + m.Length)..previewEnd],
+                        Length = m.Length,
                         Count = count++
                     });
                 }

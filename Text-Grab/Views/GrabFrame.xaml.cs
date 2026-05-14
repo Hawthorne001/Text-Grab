@@ -1976,7 +1976,7 @@ public partial class GrabFrame : Window
             return;
         }
 
-        if (!string.IsNullOrWhiteSpace(SearchBox.Text) && SearchBox.Text != "Search For Text...")
+        if (TextSearchUtilities.HasSearchText(SearchBox.Text) && SearchBox.Text != "Search For Text...")
             SearchBox.Text = "";
         else if (RectanglesCanvas.Children.Count > 0)
             ResetGrabFrame();
@@ -2991,7 +2991,7 @@ new GrabFrameOperationArgs()
         if (SearchBox.Text is not string searchText)
             return;
 
-        if (string.IsNullOrWhiteSpace(searchText) && !isSearchSelectionOverridden)
+        if (!TextSearchUtilities.HasSearchText(searchText) && !isSearchSelectionOverridden)
         {
             foreach (WordBorder wb in wordBorders)
                 wb.Deselect();
@@ -3010,10 +3010,9 @@ new GrabFrameOperationArgs()
 
         try
         {
-            regex = new(searchText, RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace);
-
-            if (ExactMatchChkBx.IsChecked is true)
-                regex = new(searchText, RegexOptions.Multiline);
+            regex = TextSearchUtilities.CreateGrabFrameSearchRegex(
+                searchText,
+                ExactMatchChkBx.IsChecked is true);
         }
         catch (Exception)
         {

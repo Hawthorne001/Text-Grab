@@ -299,8 +299,14 @@ public static partial class StringMethods
         string temp = MultiSpaces().Replace(workingString.ToString(), " ");
         workingString.Clear();
         workingString.Append(temp);
+        if (workingString.Length == 0)
+            return string.Empty;
+
         if (workingString[0] == ' ')
             workingString.Remove(0, 1);
+
+        if (workingString.Length == 0)
+            return string.Empty;
 
         if (workingString[^1] == ' ')
             workingString.Remove(workingString.Length - 1, 1);

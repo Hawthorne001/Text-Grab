@@ -92,6 +92,13 @@ public partial class FindAndReplaceWindow : FluentWindow
         FindResults.Clear();
         ResultsListView.ItemsSource = null;
 
+        if (!TextSearchUtilities.HasSearchText(FindTextBox.Text))
+        {
+            Matches = null;
+            MatchesText.Text = "0 Matches";
+            return;
+        }
+
         Pattern = FindTextBox.Text;
 
         // Auto-detect regex pattern: if starts with ^ and ends with $, enable regex mode and strip anchors
@@ -113,16 +120,8 @@ public partial class FindAndReplaceWindow : FluentWindow
             // Otherwise, use RegexOptions for backward compatibility
             bool usingPatternMode = UsePatternCheckBox.IsChecked is true;
             bool exactMatch = ExactMatchCheckBox.IsChecked is true;
-            TimeSpan timeout = TimeSpan.FromSeconds(5);
-
-            if (exactMatch)
-                Matches = Regex.Matches(StringFromWindow, Pattern, RegexOptions.Multiline, timeout);
-            else if (usingPatternMode)
-                // Pattern mode with inline (?i) flags - don't add redundant RegexOptions
-                Matches = Regex.Matches(StringFromWindow, Pattern, RegexOptions.Multiline | RegexOptions.IgnorePatternWhitespace, timeout);
-            else
-                // Non-pattern mode - use RegexOptions for case insensitivity
-                Matches = Regex.Matches(StringFromWindow, Pattern, RegexOptions.Multiline | RegexOptions.IgnoreCase | RegexOptions.IgnorePatternWhitespace, timeout);
+            Regex regex = TextSearchUtilities.CreateFindAndReplaceSearchRegex(Pattern, usingPatternMode, exactMatch);
+            Matches = regex.Matches(StringFromWindow);
         }
         catch (RegexMatchTimeoutException)
         {
@@ -142,7 +141,7 @@ public partial class FindAndReplaceWindow : FluentWindow
             return;
         }
 
-        if (Matches.Count < 1 || string.IsNullOrWhiteSpace(FindTextBox.Text))
+        if (Matches.Count < 1)
         {
             MatchesText.Text = "0 Matches";
             return;
@@ -160,9 +159,10 @@ public partial class FindAndReplaceWindow : FluentWindow
             FindResult fr = new()
             {
                 Index = m.Index,
-                Text = m.Value.MakeStringSingleLine(),
+                Text = TextSearchUtilities.FormatMatchTextForDisplay(m.Value),
                 PreviewLeft = StringMethods.GetCharactersToLeftOfNewLine(ref stringFromWindow, m.Index, 12).MakeStringSingleLine(),
                 PreviewRight = StringMethods.GetCharactersToRightOfNewLine(ref stringFromWindow, m.Index + m.Length, 12).MakeStringSingleLine(),
+                Length = m.Length,
                 Count = count
             };
             FindResults.Add(fr);
@@ -187,7 +187,7 @@ public partial class FindAndReplaceWindow : FluentWindow
     private Regex? BuildCurrentRegex()
     {
         string rawPattern = FindTextBox.Text;
-        if (string.IsNullOrEmpty(rawPattern)) return null;
+        if (!TextSearchUtilities.HasSearchText(rawPattern)) return null;
 
         if (rawPattern.StartsWith('^') && rawPattern.EndsWith('$') && rawPattern.Length > 2)
             rawPattern = rawPattern[1..^1];
@@ -195,11 +195,7 @@ public partial class FindAndReplaceWindow : FluentWindow
         if (UsePatternCheckBox.IsChecked is false && ExactMatchCheckBox.IsChecked is bool matchExactly)
             rawPattern = rawPattern.EscapeSpecialRegexChars(matchExactly);
 
-        RegexOptions options = RegexOptions.None;
-        if (ExactMatchCheckBox.IsChecked is not true) options |= RegexOptions.IgnoreCase;
-        if (UsePatternCheckBox.IsChecked is true)     options |= RegexOptions.IgnorePatternWhitespace;
-
-        try { return new Regex(rawPattern, options, TimeSpan.FromSeconds(5)); }
+        try { return TextSearchUtilities.CreateReplacementRegex(rawPattern, ExactMatchCheckBox.IsChecked is true); }
         catch { return null; }
     }
 
@@ -209,7 +205,7 @@ public partial class FindAndReplaceWindow : FluentWindow
         ResultsListView.ItemsSource = null;
         Matches = null;
 
-        if (textEditWindow is null || string.IsNullOrWhiteSpace(FindTextBox.Text))
+        if (textEditWindow is null || !TextSearchUtilities.HasSearchText(FindTextBox.Text))
         {
             MatchesText.Text = "0 Matches";
             return;
@@ -404,7 +400,7 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void FindAndReplacedLoaded(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrWhiteSpace(FindTextBox.Text))
+        if (TextSearchUtilities.HasSearchText(FindTextBox.Text))
             SearchForText();
 
         // Update save button visibility on load
@@ -466,7 +462,7 @@ public partial class FindAndReplaceWindow : FluentWindow
                 FindTextBox.Text = extractedPattern.GetPattern(precisionLevel);
             }
         }
-        else if (UsePatternCheckBox.IsChecked is true && !string.IsNullOrWhiteSpace(FindTextBox.Text))
+        else if (UsePatternCheckBox.IsChecked is true && TextSearchUtilities.HasSearchText(FindTextBox.Text))
         {
             // No extracted pattern, but we're in pattern mode - manually toggle (?i) flag
             string currentPattern = FindTextBox.Text;
@@ -642,7 +638,7 @@ public partial class FindAndReplaceWindow : FluentWindow
 
     private void TextSearch_CanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(FindTextBox.Text))
+        if (!TextSearchUtilities.HasSearchText(FindTextBox.Text))
             e.CanExecute = false;
         else
             e.CanExecute = true;
@@ -663,7 +659,7 @@ public partial class FindAndReplaceWindow : FluentWindow
     {
         if (e.Key == Key.Escape)
         {
-            if (!string.IsNullOrWhiteSpace(FindTextBox.Text))
+            if (TextSearchUtilities.HasSearchText(FindTextBox.Text))
                 FindTextBox.Clear();
             else
                 this.Close();
