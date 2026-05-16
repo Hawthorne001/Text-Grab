@@ -22,7 +22,16 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
 
     // Using a DependencyProperty as the backing store for Word.  This enables animation, styling, binding, etc...
     public static readonly DependencyProperty WordProperty =
-        DependencyProperty.Register("Word", typeof(string), typeof(WordBorder), new PropertyMetadata(""));
+        DependencyProperty.Register(nameof(Word), typeof(string), typeof(WordBorder), new PropertyMetadata(string.Empty, OnWordChanged));
+
+    public static readonly DependencyProperty DisplayTextProperty =
+        DependencyProperty.Register(nameof(DisplayText), typeof(string), typeof(WordBorder), new PropertyMetadata(string.Empty, OnDisplayTextChanged));
+
+    public static readonly DependencyProperty KeepSingleLineOutputProperty =
+        DependencyProperty.Register(nameof(KeepSingleLineOutput), typeof(bool), typeof(WordBorder), new PropertyMetadata(false, OnLayoutPropertyChanged));
+
+    public static readonly DependencyProperty DisplayLineHeightProperty =
+        DependencyProperty.Register(nameof(DisplayLineHeight), typeof(double), typeof(WordBorder), new PropertyMetadata(0d, OnLayoutPropertyChanged));
 
     public static readonly DependencyProperty TemplateIndexProperty =
         DependencyProperty.Register(nameof(TemplateIndex), typeof(int), typeof(WordBorder),
@@ -41,6 +50,7 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
     private int contextMenuBaseSize;
     private SolidColorBrush contrastingForeground = new(Colors.White);
     private DispatcherTimer debounceTimer = new();
+    private bool isSyncingTextProperties;
     private double left = 0;
     private SolidColorBrush matchingBackground = new(Colors.Black);
     private double top = 0;
@@ -58,7 +68,10 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
     {
         StandardInitialization();
 
+        KeepSingleLineOutput = info.KeepSingleLineOutput;
+        DisplayLineHeight = info.DisplayLineHeight;
         Word = info.Word;
+        DisplayText = string.IsNullOrWhiteSpace(info.DisplayText) ? info.Word : info.DisplayText;
         Left = info.BorderRect.Left;
         Top = info.BorderRect.Top;
         Width = info.BorderRect.Width;
@@ -80,9 +93,46 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
         InitializeComponent();
         DataContext = this;
         contextMenuBaseSize = WordBorderBorder.ContextMenu.Items.Count;
+        Loaded += WordBorder_Loaded;
+        SizeChanged += WordBorder_SizeChanged;
 
         debounceTimer.Interval = new(0, 0, 0, 0, 300);
         debounceTimer.Tick += DebounceTimer_Tick;
+    }
+
+    private static void OnDisplayTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not WordBorder wb || wb.isSyncingTextProperties)
+            return;
+
+        wb.isSyncingTextProperties = true;
+        wb.Word = wb.KeepSingleLineOutput
+            ? (e.NewValue as string ?? string.Empty).MakeStringSingleLine()
+            : e.NewValue as string ?? string.Empty;
+        wb.isSyncingTextProperties = false;
+        wb.PropertyChanged?.Invoke(wb, new PropertyChangedEventArgs(nameof(DisplayText)));
+        wb.ApplyTextLayout();
+    }
+
+    private static void OnLayoutPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is WordBorder wb)
+            wb.ApplyTextLayout();
+    }
+
+    private static void OnWordChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is not WordBorder wb)
+            return;
+
+        if (!wb.isSyncingTextProperties)
+        {
+            wb.isSyncingTextProperties = true;
+            wb.DisplayText = e.NewValue as string ?? string.Empty;
+            wb.isSyncingTextProperties = false;
+        }
+
+        wb.PropertyChanged?.Invoke(wb, new PropertyChangedEventArgs(nameof(Word)));
     }
     #endregion Constructors
 
@@ -99,6 +149,24 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
     public bool IsEditing => EditWordTextBox.IsFocused;
     public bool IsFromEditWindow { get; set; } = false;
     public bool IsSelected { get; set; } = false;
+    public string DisplayText
+    {
+        get { return (string)GetValue(DisplayTextProperty); }
+        set { SetValue(DisplayTextProperty, value); }
+    }
+
+    public double DisplayLineHeight
+    {
+        get { return (double)GetValue(DisplayLineHeightProperty); }
+        set { SetValue(DisplayLineHeightProperty, value); }
+    }
+
+    public bool KeepSingleLineOutput
+    {
+        get { return (bool)GetValue(KeepSingleLineOutputProperty); }
+        set { SetValue(KeepSingleLineOutputProperty, value); }
+    }
+
     public double Left
     {
         get { return left; }
@@ -246,6 +314,30 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
 
         if (Uri.TryCreate(Word, UriKind.Absolute, out Uri? uri))
             EditWordTextBox.Background = new SolidColorBrush(Colors.Blue);
+    }
+
+    private void ApplyTextLayout()
+    {
+        if (IsBarcode)
+            return;
+
+        if (KeepSingleLineOutput && DisplayLineHeight > 0)
+        {
+            EditWordTextBox.TextWrapping = TextWrapping.Wrap;
+            EditWordTextBox.Width = Math.Max(Width - 2, 10);
+            EditWordTextBox.Height = Math.Max(Height - 2, 14);
+            EditWordTextBox.FontSize = Math.Max(1, DisplayLineHeight * 0.75);
+            EditWordTextBox.SetValue(TextBlock.LineHeightProperty, Math.Max(1, DisplayLineHeight));
+            EditWordTextBox.SetValue(TextBlock.LineStackingStrategyProperty, LineStackingStrategy.BlockLineHeight);
+            return;
+        }
+
+        EditWordTextBox.TextWrapping = TextWrapping.NoWrap;
+        EditWordTextBox.ClearValue(FrameworkElement.WidthProperty);
+        EditWordTextBox.ClearValue(FrameworkElement.HeightProperty);
+        EditWordTextBox.ClearValue(Control.FontSizeProperty);
+        EditWordTextBox.ClearValue(TextBlock.LineHeightProperty);
+        EditWordTextBox.ClearValue(TextBlock.LineStackingStrategyProperty);
     }
 
     private void BreakIntoWordsMenuItem_Click(object sender, RoutedEventArgs e)
@@ -468,12 +560,18 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
         else
             Select();
     }
-        private void WordBorderControl_Unloaded(object sender, RoutedEventArgs e)
-        {
-            this.MouseDoubleClick -= WordBorderControl_MouseDoubleClick;
-            this.MouseDown -= WordBorderControl_MouseDown;
-            this.Unloaded -= WordBorderControl_Unloaded;
-        }
+    private void WordBorderControl_Unloaded(object sender, RoutedEventArgs e)
+    {
+        this.MouseDoubleClick -= WordBorderControl_MouseDoubleClick;
+        this.MouseDown -= WordBorderControl_MouseDown;
+        this.Unloaded -= WordBorderControl_Unloaded;
+        Loaded -= WordBorder_Loaded;
+        SizeChanged -= WordBorder_SizeChanged;
+    }
+
+    private void WordBorder_Loaded(object sender, RoutedEventArgs e) => ApplyTextLayout();
+
+    private void WordBorder_SizeChanged(object sender, SizeChangedEventArgs e) => ApplyTextLayout();
 
         private async void TranslateWordMenuItem_Click(object sender, RoutedEventArgs e)
         {

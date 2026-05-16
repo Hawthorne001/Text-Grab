@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -19,6 +20,13 @@ public class ZoomBorder : Border
     private bool isPanning = false;
     private Point origin;
     private Point start;
+
+    public event EventHandler? ResetRequested;
+
+    public ZoomBorder()
+    {
+        Background = Brushes.Transparent;
+    }
 
     private TranslateTransform GetTranslateTransform(UIElement element) =>
         (TranslateTransform)((TransformGroup)element.RenderTransform)
@@ -46,6 +54,14 @@ public class ZoomBorder : Border
     public bool IsSpacePanModifierPressed { get; set; } = false;
 
     public bool RequireSpaceToPan { get; set; } = false;
+
+    public double GetScale()
+    {
+        if (child is null)
+            return 1.0;
+
+        return GetScaleTransform(child).ScaleX;
+    }
 
     public void Initialize(UIElement element)
     {
@@ -85,6 +101,39 @@ public class ZoomBorder : Border
         ReleaseMouseCapture();
         Cursor = Cursors.Arrow;
         CanPan = false;
+    }
+
+    public void SetScale(double scale)
+    {
+        if (child is null)
+            return;
+
+        if (!double.IsFinite(scale) || scale <= 0)
+            scale = 1.0;
+
+        ScaleTransform st = GetScaleTransform(child);
+        TranslateTransform tt = GetTranslateTransform(child);
+
+        st.ScaleX = scale;
+        st.ScaleY = scale;
+
+        double childWidth = child.RenderSize.Width > 0 ? child.RenderSize.Width : ActualWidth;
+        double childHeight = child.RenderSize.Height > 0 ? child.RenderSize.Height : ActualHeight;
+
+        if (double.IsFinite(childWidth) && childWidth > 0)
+            tt.X = ((childWidth * scale) - childWidth) * -0.5;
+        else
+            tt.X = 0;
+
+        if (double.IsFinite(childHeight) && childHeight > 0)
+            tt.Y = ((childHeight * scale) - childHeight) * -0.5;
+        else
+            tt.Y = 0;
+
+        isPanning = false;
+        ReleaseMouseCapture();
+        Cursor = Cursors.Arrow;
+        CanPan = scale > 1.0;
     }
 
     private bool IsPanGestureActive() =>
@@ -150,6 +199,7 @@ public class ZoomBorder : Border
     {
         if (e.ChangedButton == MouseButton.Middle)
         {
+            ResetRequested?.Invoke(this, EventArgs.Empty);
             Reset();
             e.Handled = true;
             return;

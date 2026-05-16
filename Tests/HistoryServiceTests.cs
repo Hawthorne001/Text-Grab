@@ -103,7 +103,10 @@ public class HistoryServiceTests
                 new()
                 {
                     Word = "hello",
+                    DisplayText = $"hello{Environment.NewLine}world",
                     BorderRect = new Rect(1, 2, 30, 40),
+                    DisplayLineHeight = 18,
+                    KeepSingleLineOutput = true,
                     LineNumber = 1,
                     ResultColumnID = 2,
                     ResultRowID = 3
@@ -121,7 +124,9 @@ public class HistoryServiceTests
                     TextContent = "history with borders",
                     ImagePath = "borders.bmp",
                     SourceMode = TextGrabMode.GrabFrame,
-                    WordBorderInfoJson = inlineWordBorderJson
+                    WordBorderInfoJson = inlineWordBorderJson,
+                    ManualTableColumnSeparators = [44],
+                    ManualTableRowSeparators = [18]
                 }
             ]);
 
@@ -130,18 +135,25 @@ public class HistoryServiceTests
 
         Assert.Equal(inlineWordBorderJson, historyItem.WordBorderInfoJson);
         Assert.Equal("image-with-borders.wordborders.json", historyItem.WordBorderInfoFileName);
+        Assert.Equal([44d], historyItem.ManualTableColumnSeparators);
+        Assert.Equal([18d], historyItem.ManualTableRowSeparators);
 
         List<WordBorderInfo> wordBorderInfos = await historyService.GetWordBorderInfosAsync(historyItem);
         WordBorderInfo wordBorderInfo = Assert.Single(wordBorderInfos);
         Assert.Equal("hello", wordBorderInfo.Word);
+        Assert.Equal($"hello{Environment.NewLine}world", wordBorderInfo.DisplayText);
         Assert.Equal(30d, wordBorderInfo.BorderRect.Width);
         Assert.Equal(40d, wordBorderInfo.BorderRect.Height);
+        Assert.Equal(18d, wordBorderInfo.DisplayLineHeight);
+        Assert.True(wordBorderInfo.KeepSingleLineOutput);
 
         historyService.ReleaseLoadedHistories();
 
         string savedHistoryJson = await FileUtilities.GetTextFileAsync("HistoryWithImage.json", FileStorageKind.WithHistory);
         Assert.Contains("\"WordBorderInfoJson\"", savedHistoryJson);
         Assert.Contains("\"WordBorderInfoFileName\"", savedHistoryJson);
+        Assert.Contains("\"ManualTableColumnSeparators\"", savedHistoryJson);
+        Assert.Contains("\"ManualTableRowSeparators\"", savedHistoryJson);
 
         string savedWordBorderJson = await FileUtilities.GetTextFileAsync(historyItem.WordBorderInfoFileName!, FileStorageKind.WithHistory);
         Assert.Contains("hello", savedWordBorderJson);

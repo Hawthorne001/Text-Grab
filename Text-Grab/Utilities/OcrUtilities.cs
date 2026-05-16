@@ -445,6 +445,21 @@ public static partial class OcrUtilities
         return paragraphsOutput;
     }
 
+    internal readonly record struct PositionedOcrLine(int LineNumber, string Text, Windows.Foundation.Rect BoundingBox);
+
+    internal sealed class GroupedOcrLines(IReadOnlyList<PositionedOcrLine> lines, Windows.Foundation.Rect boundingBox)
+    {
+        public Windows.Foundation.Rect BoundingBox { get; } = boundingBox;
+
+        public IReadOnlyList<PositionedOcrLine> Lines { get; } = lines;
+
+        public int StartingLineNumber => Lines.Count == 0 ? 0 : Lines[0].LineNumber;
+
+        public string DisplayText => string.Join(Environment.NewLine, Lines.Select(static line => line.Text));
+
+        public string SingleLineText => string.Join(" ", Lines.Select(static line => line.Text).Where(static text => !string.IsNullOrWhiteSpace(text)));
+    }
+
     internal static string BuildTextFromOcrLines(ILanguage language, IOcrLinesWords ocrResult)
     {
         StringBuilder text = new();
@@ -454,14 +469,18 @@ public static partial class OcrUtilities
 
         if (DefaultSettings.ParagraphDetection && isSpaceJoiningOCRLang && lines.Length > 0)
         {
-            text.Append(lines[0].Text);
-            for (int i = 1; i < lines.Length; i++)
+            List<GroupedOcrLines> groupedLines =
+            [
+                .. GroupWrappedParagraphLines(
+                    [.. lines.Select((line, index) => new PositionedOcrLine(index, line.Text, line.BoundingBox))])
+            ];
+
+            for (int i = 0; i < groupedLines.Count; i++)
             {
-                if (IsWrappedLine(lines[i - 1], lines[i]))
-                    text.Append(' ');
-                else
+                if (i > 0)
                     text.AppendLine();
-                text.Append(lines[i].Text);
+
+                text.Append(groupedLines[i].SingleLineText);
             }
         }
         else
@@ -474,6 +493,56 @@ public static partial class OcrUtilities
             text.ReverseWordsForRightToLeft();
 
         return text.ToString();
+    }
+
+    internal static List<GroupedOcrLines> GroupWrappedParagraphLines(IReadOnlyList<PositionedOcrLine> lines)
+    {
+        List<GroupedOcrLines> groupedLines = [];
+
+        if (lines.Count == 0)
+            return groupedLines;
+
+        List<PositionedOcrLine> currentGroup = [lines[0]];
+        Windows.Foundation.Rect currentBounds = lines[0].BoundingBox;
+
+        for (int i = 1; i < lines.Count; i++)
+        {
+            PositionedOcrLine previousLine = currentGroup[^1];
+            PositionedOcrLine currentLine = lines[i];
+
+            if (IsWrappedParagraph(
+                previousLine.BoundingBox.Y,
+                previousLine.BoundingBox.Height,
+                currentLine.BoundingBox.Y,
+                currentLine.BoundingBox.Height))
+            {
+                currentGroup.Add(currentLine);
+                currentBounds = UnionRectangles(currentBounds, currentLine.BoundingBox);
+                continue;
+            }
+
+            groupedLines.Add(new GroupedOcrLines([.. currentGroup], currentBounds));
+            currentGroup = [currentLine];
+            currentBounds = currentLine.BoundingBox;
+        }
+
+        groupedLines.Add(new GroupedOcrLines([.. currentGroup], currentBounds));
+        return groupedLines;
+    }
+
+    private static Windows.Foundation.Rect UnionRectangles(Windows.Foundation.Rect current, Windows.Foundation.Rect next)
+    {
+        if (current.IsEmpty)
+            return next;
+
+        if (next.IsEmpty)
+            return current;
+
+        double left = Math.Min(current.X, next.X);
+        double top = Math.Min(current.Y, next.Y);
+        double right = Math.Max(current.X + current.Width, next.X + next.Width);
+        double bottom = Math.Max(current.Y + current.Height, next.Y + next.Height);
+        return new Windows.Foundation.Rect(left, top, right - left, bottom - top);
     }
 
     /// <summary>

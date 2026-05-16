@@ -1,4 +1,5 @@
-﻿using Fasetto.Word;
+using Dapplo.Windows.User32;
+using Fasetto.Word;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -20,6 +21,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Threading;
 using Text_Grab.Controls;
+using Text_Grab.Extensions;
 using Text_Grab.Interfaces;
 using Text_Grab.Models;
 using Text_Grab.Properties;
@@ -47,6 +49,7 @@ public partial class GrabFrame : Window
     public static RoutedCommand UndoCommand = new();
     public static RoutedCommand GrabCommand = new();
     public static RoutedCommand GrabTrimCommand = new();
+    private readonly GrabFrameTableEditState tableEditState = new();
     private ResultTable? AnalyzedResultTable;
     private Point clickedPoint;
     private ILanguage? currentLanguage;
@@ -99,6 +102,8 @@ public partial class GrabFrame : Window
     private CancellationTokenSource? translationCancellationTokenSource;
     private readonly List<PdfTextLineOverlay> pdfTextLineOverlays = [];
     private CancellationTokenSource? _pdfPageNavCts;
+    private bool isLoadedVisualDocument = false;
+    private double frozenFrameContentScale = 1;
     private const string TargetLanguageMenuHeader = "Target Language";
 
     #endregion Fields
@@ -290,6 +295,7 @@ public partial class GrabFrame : Window
 
     private async Task LoadContentFromHistory(HistoryInfo history)
     {
+        CancelTablePlacement(clearManualSeparators: true);
         FrameText = history.TextContent;
         currentLanguage = history.OcrLanguage;
         SyncLanguageComboBoxSelection(currentLanguage);
@@ -342,6 +348,7 @@ public partial class GrabFrame : Window
         if (wbInfoList.Count > 0)
         {
             ScaleHistoryWordBordersToCanvas(history, wbInfoList);
+            tableEditState.SetManualSeparators(history.ManualTableRowSeparators, history.ManualTableColumnSeparators);
 
             foreach (WordBorderInfo info in wbInfoList)
             {
@@ -359,6 +366,7 @@ public partial class GrabFrame : Window
         }
         else
         {
+            tableEditState.SetManualSeparators(history.ManualTableRowSeparators, history.ManualTableColumnSeparators);
             reDrawTimer.Start();
             ShouldSaveOnClose = true;
         }
@@ -396,8 +404,14 @@ public partial class GrabFrame : Window
 
     private void ScaleHistoryWordBordersToCanvas(HistoryInfo history, List<WordBorderInfo> wbInfoList)
     {
-        if (wbInfoList.Count == 0 || RectanglesCanvas.Width <= 0 || RectanglesCanvas.Height <= 0)
+        if ((wbInfoList.Count == 0
+                && (history.ManualTableRowSeparators?.Count ?? 0) == 0
+                && (history.ManualTableColumnSeparators?.Count ?? 0) == 0)
+            || RectanglesCanvas.Width <= 0
+            || RectanglesCanvas.Height <= 0)
+        {
             return;
+        }
 
         Size savedContentSize = GetSavedHistoryContentSize(history);
         if (savedContentSize.Width <= 0 || savedContentSize.Height <= 0)
@@ -408,13 +422,16 @@ public partial class GrabFrame : Window
         if (!double.IsFinite(scaleX) || !double.IsFinite(scaleY) || (scaleX <= 1.05 && scaleY <= 1.05))
             return;
 
-        double maxRight = wbInfoList.Max(info => info.BorderRect.Right);
-        double maxBottom = wbInfoList.Max(info => info.BorderRect.Bottom);
+        double maxRight = wbInfoList.Count > 0 ? wbInfoList.Max(info => info.BorderRect.Right) : 0;
+        double maxBottom = wbInfoList.Count > 0 ? wbInfoList.Max(info => info.BorderRect.Bottom) : 0;
 
         // Scale only when saved word borders look like they were captured in
         // the old window-content coordinate space rather than image-space.
-        if (maxRight > savedContentSize.Width * 1.1 || maxBottom > savedContentSize.Height * 1.1)
+        if (wbInfoList.Count > 0
+            && (maxRight > savedContentSize.Width * 1.1 || maxBottom > savedContentSize.Height * 1.1))
+        {
             return;
+        }
 
         foreach (WordBorderInfo info in wbInfoList)
         {
@@ -424,7 +441,16 @@ public partial class GrabFrame : Window
                 borderRect.Top * scaleY,
                 borderRect.Width * scaleX,
                 borderRect.Height * scaleY);
+
+            if (info.DisplayLineHeight > 0)
+                info.DisplayLineHeight *= scaleY;
         }
+
+        if (history.ManualTableRowSeparators is not null)
+            history.ManualTableRowSeparators = [.. history.ManualTableRowSeparators.Select(position => position * scaleY)];
+
+        if (history.ManualTableColumnSeparators is not null)
+            history.ManualTableColumnSeparators = [.. history.ManualTableColumnSeparators.Select(position => position * scaleX)];
     }
 
     private Size GetSavedHistoryContentSize(HistoryInfo history)
@@ -501,6 +527,7 @@ public partial class GrabFrame : Window
     {
         InitializeComponent();
         App.SetTheme();
+        MainZoomBorder.ResetRequested += MainZoomBorder_ResetRequested;
 
         _ = LoadOcrLanguagesAsync();
 
@@ -526,6 +553,7 @@ public partial class GrabFrame : Window
         SetRefreshOrOcrFrameBtnVis();
 
         DataContext = this;
+        UpdateTableEditingUiState();
     }
 
     private void FrameMessageTimer_Tick(object? sender, EventArgs e)
@@ -549,6 +577,187 @@ public partial class GrabFrame : Window
         FrameMessageBorder.Visibility = Visibility.Visible;
         frameMessageTimer.Stop();
         frameMessageTimer.Start();
+    }
+
+    private void AddTableColumnMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        BeginTablePlacement(GrabFrameTablePlacementMode.AddColumn);
+    }
+
+    private void AddTableRowMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        BeginTablePlacement(GrabFrameTablePlacementMode.AddRow);
+    }
+
+    private void BeginTablePlacement(GrabFrameTablePlacementMode placementMode)
+    {
+        if (TableToggleButton.IsChecked is not true || wordBorders.Count == 0)
+        {
+            ShowFrameMessage("Turn on table analysis after OCR to place table dividers.");
+            UpdateTableEditingUiState();
+            return;
+        }
+
+        _ = TryToPlaceTable();
+        tableEditState.BeginPlacement(placementMode);
+        ClearTablePlacementPreview();
+        UpdateTableEditingUiState();
+    }
+
+    private void CancelTablePlacement(bool clearManualSeparators = false)
+    {
+        if (clearManualSeparators)
+            tableEditState.ClearAll();
+        else
+            tableEditState.CancelPlacement();
+
+        ClearTablePlacementPreview();
+        UpdateTableEditingUiState();
+    }
+
+    private void CancelTablePlacement_Click(object sender, RoutedEventArgs e)
+    {
+        CancelTablePlacement();
+    }
+
+    private void ClearTablePlacementPreview()
+    {
+        TablePlacementOverlayCanvas.Children.Clear();
+    }
+
+    private void DrawTablePlacementPreview(Rect tableBounds)
+    {
+        ClearTablePlacementPreview();
+
+        if (!tableEditState.IsPlacementActive || tableEditState.PreviewPosition is not double previewPosition)
+            return;
+
+        SolidColorBrush previewBrush = tableEditState.IsPreviewValid
+            ? new SolidColorBrush(Color.FromArgb(255, 40, 118, 126))
+            : new SolidColorBrush(Color.FromArgb(255, 196, 43, 28));
+
+        Border previewLine = new()
+        {
+            Background = previewBrush,
+            IsHitTestVisible = false
+        };
+
+        if (tableEditState.PlacementMode == GrabFrameTablePlacementMode.AddRow)
+        {
+            previewLine.Height = 2;
+            previewLine.Width = tableBounds.Width;
+            Canvas.SetLeft(previewLine, tableBounds.Left);
+            Canvas.SetTop(previewLine, previewPosition - 1);
+        }
+        else
+        {
+            previewLine.Width = 2;
+            previewLine.Height = tableBounds.Height;
+            Canvas.SetLeft(previewLine, previewPosition - 1);
+            Canvas.SetTop(previewLine, tableBounds.Top);
+        }
+
+        TablePlacementOverlayCanvas.Children.Add(previewLine);
+    }
+
+    private bool TryCommitTablePlacement(Point pointerPosition)
+    {
+        UpdateTablePlacementPreview(pointerPosition);
+
+        if (!tableEditState.TryCommitPreview())
+        {
+            ShowFrameMessage("Move farther from the table edge or another divider.");
+            return true;
+        }
+
+        string placementLabel = tableEditState.PlacementMode == GrabFrameTablePlacementMode.AddRow
+            ? "row"
+            : "column";
+
+        UpdateFrameText();
+        UpdateTablePlacementPreview(pointerPosition);
+        ShowFrameMessage($"Added {placementLabel} divider.");
+        return true;
+    }
+
+    private bool TryGetTablePlacementBounds(out Rect tableBounds)
+    {
+        tableBounds = Rect.Empty;
+
+        if (TableToggleButton.IsChecked is not true || wordBorders.Count == 0)
+            return false;
+
+        if (AnalyzedResultTable is null)
+            _ = TryToPlaceTable();
+
+        tableBounds = AnalyzedResultTable?.BoundingRect ?? Rect.Empty;
+        return tableBounds != Rect.Empty
+            && tableBounds.Width > 0
+            && tableBounds.Height > 0;
+    }
+
+    private void UpdateTableEditingUiState()
+    {
+        bool canEditTable = TableToggleButton.IsChecked is true && wordBorders.Count > 0;
+
+        EditTableMenuItem.IsEnabled = canEditTable;
+        AddTableRowMenuItem.IsEnabled = canEditTable;
+        AddTableColumnMenuItem.IsEnabled = canEditTable;
+        CancelTablePlacementMenuItem.IsEnabled = tableEditState.IsPlacementActive;
+        TableToggleAddRowMenuItem.IsEnabled = canEditTable;
+        TableToggleAddColumnMenuItem.IsEnabled = canEditTable;
+        TableToggleCancelPlacementMenuItem.IsEnabled = tableEditState.IsPlacementActive;
+
+        TablePlacementBanner.Visibility = tableEditState.IsPlacementActive ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!tableEditState.IsPlacementActive)
+            return;
+
+        string placementTarget = tableEditState.PlacementMode == GrabFrameTablePlacementMode.AddRow
+            ? "row"
+            : "column";
+        TablePlacementInstructionsTextBlock.Text = $"Click inside the table to place a {placementTarget} divider. Press Esc to cancel.";
+    }
+
+    private void UpdateTablePlacementPreview(Point pointerPosition)
+    {
+        if (!tableEditState.IsPlacementActive || !TryGetTablePlacementBounds(out Rect tableBounds))
+        {
+            ClearTablePlacementPreview();
+            return;
+        }
+
+        double minimumPosition;
+        double maximumPosition;
+        double requestedPosition;
+        IEnumerable<double> existingSeparators;
+
+        if (tableEditState.PlacementMode == GrabFrameTablePlacementMode.AddRow)
+        {
+            minimumPosition = tableBounds.Top + GrabFrameTableEditState.MinimumSeparatorGap;
+            maximumPosition = tableBounds.Bottom - GrabFrameTableEditState.MinimumSeparatorGap;
+            requestedPosition = pointerPosition.Y;
+            existingSeparators = AnalyzedResultTable?.RowLines ?? [];
+        }
+        else
+        {
+            minimumPosition = tableBounds.Left + GrabFrameTableEditState.MinimumSeparatorGap;
+            maximumPosition = tableBounds.Right - GrabFrameTableEditState.MinimumSeparatorGap;
+            requestedPosition = pointerPosition.X;
+            existingSeparators = AnalyzedResultTable?.ColumnLines ?? [];
+        }
+
+        if (!tableEditState.TryUpdatePreview(
+            requestedPosition,
+            minimumPosition,
+            maximumPosition,
+            existingSeparators))
+        {
+            DrawTablePlacementPreview(tableBounds);
+            return;
+        }
+
+        DrawTablePlacementPreview(tableBounds);
     }
 
     private void ClearLoadedPdfDocument()
@@ -592,6 +801,7 @@ public partial class GrabFrame : Window
         try
         {
             reDrawTimer.Stop();
+            CancelTablePlacement(clearManualSeparators: true);
             ResetGrabFrame();
             await Task.Delay(300, ct);
 
@@ -608,6 +818,7 @@ public partial class GrabFrame : Window
             _currentPdfPageIndex = pageIndex;
             FreezeToggleButton.IsChecked = true;
             FreezeGrabFrame();
+            EnsureMinimumLoadedDocumentWindowSize();
             MainZoomBorder.CanZoom = true;
             FreezeToggleButton.Visibility = Visibility.Collapsed;
             UpdatePdfPageNavigation();
@@ -766,6 +977,189 @@ public partial class GrabFrame : Window
         MainZoomBorder.RequireSpaceToPan = true;
     }
 
+    private void MainZoomBorder_ResetRequested(object? sender, EventArgs e)
+    {
+        frozenFrameContentScale = 1;
+    }
+
+    private void ScaleFrozenOverlayElements(double widthScale, double heightScale)
+    {
+        if ((!double.IsFinite(widthScale) || widthScale <= 0)
+            || (!double.IsFinite(heightScale) || heightScale <= 0))
+        {
+            return;
+        }
+
+        if (Math.Abs(widthScale - 1) < 0.001 && Math.Abs(heightScale - 1) < 0.001)
+        {
+            return;
+        }
+
+        foreach (WordBorder wordBorder in wordBorders)
+        {
+            wordBorder.Left *= widthScale;
+            wordBorder.Top *= heightScale;
+            wordBorder.Width *= widthScale;
+            wordBorder.Height *= heightScale;
+
+            if (wordBorder.DisplayLineHeight > 0)
+                wordBorder.DisplayLineHeight *= heightScale;
+        }
+
+        foreach (PdfTextLineOverlay pdfTextLine in pdfTextLineOverlays)
+        {
+            pdfTextLine.Width *= widthScale;
+            pdfTextLine.Height *= heightScale;
+            Canvas.SetLeft(pdfTextLine, Canvas.GetLeft(pdfTextLine) * widthScale);
+            Canvas.SetTop(pdfTextLine, Canvas.GetTop(pdfTextLine) * heightScale);
+        }
+
+        if (RectanglesCanvas.Children.Contains(selectBorder))
+        {
+            selectBorder.Width *= widthScale;
+            selectBorder.Height *= heightScale;
+            Canvas.SetLeft(selectBorder, Canvas.GetLeft(selectBorder) * widthScale);
+            Canvas.SetTop(selectBorder, Canvas.GetTop(selectBorder) * heightScale);
+        }
+
+        tableEditState.ScaleSeparators(heightScale, widthScale);
+        ClearTablePlacementPreview();
+    }
+
+    private void ApplyFrozenFrameContentScale()
+    {
+        MainZoomBorder.Reset();
+
+        if (!IsFreezeMode || frameContentImageSource is null)
+            return;
+
+        double currentCanvasWidth = RectanglesCanvas.Width > 0 ? RectanglesCanvas.Width : RectanglesCanvas.ActualWidth;
+        double currentCanvasHeight = RectanglesCanvas.Height > 0 ? RectanglesCanvas.Height : RectanglesCanvas.ActualHeight;
+
+        SyncRectanglesCanvasSizeToImage();
+
+        double newCanvasWidth = RectanglesCanvas.Width > 0 ? RectanglesCanvas.Width : RectanglesCanvas.ActualWidth;
+        double newCanvasHeight = RectanglesCanvas.Height > 0 ? RectanglesCanvas.Height : RectanglesCanvas.ActualHeight;
+
+        if (currentCanvasWidth > 0 && currentCanvasHeight > 0 && newCanvasWidth > 0 && newCanvasHeight > 0)
+            ScaleFrozenOverlayElements(newCanvasWidth / currentCanvasWidth, newCanvasHeight / currentCanvasHeight);
+
+        if (TableToggleButton.IsChecked is true && wordBorders.Count > 0)
+            UpdateFrameText();
+        else
+            UpdateTemplateRegionOverlay();
+    }
+
+    private Rect GetCurrentWorkAreaBounds()
+    {
+        Rect currentWindowRect = new(
+            Left,
+            Top,
+            ActualWidth > 1 ? ActualWidth : Width,
+            ActualHeight > 1 ? ActualHeight : Height);
+
+        Point windowCenter = new(
+            currentWindowRect.Left + (currentWindowRect.Width / 2.0),
+            currentWindowRect.Top + (currentWindowRect.Height / 2.0));
+
+        Rect? fallbackBounds = null;
+        double bestIntersectionArea = -1;
+
+        foreach (DisplayInfo display in DisplayInfo.AllDisplayInfos)
+        {
+            Rect scaledBounds = display.ScaledBounds();
+
+            fallbackBounds ??= scaledBounds;
+
+            if (scaledBounds.Contains(windowCenter))
+                return scaledBounds;
+
+            Rect intersection = Rect.Intersect(scaledBounds, currentWindowRect);
+            double intersectionArea = intersection.IsEmpty ? -1 : intersection.Width * intersection.Height;
+
+            if (intersectionArea > bestIntersectionArea)
+            {
+                bestIntersectionArea = intersectionArea;
+                fallbackBounds = scaledBounds;
+            }
+        }
+
+        return fallbackBounds ?? SystemParameters.WorkArea;
+    }
+
+    private void EnsureMinimumLoadedDocumentWindowSize()
+    {
+        if (!isLoadedVisualDocument)
+            return;
+
+        Rect currentWindowRect = new(
+            Left,
+            Top,
+            ActualWidth > 1 ? ActualWidth : Width,
+            ActualHeight > 1 ? ActualHeight : Height);
+
+        Rect targetWindowRect = GrabFrameViewScaleUtilities.GetMinimumWindowRect(
+            currentWindowRect,
+            new Size(
+                GrabFrameViewScaleUtilities.MinimumLoadedDocumentWindowWidth,
+                GrabFrameViewScaleUtilities.MinimumLoadedDocumentWindowHeight),
+            GetCurrentWorkAreaBounds());
+
+        if (Math.Abs(targetWindowRect.Width - currentWindowRect.Width) < 0.1
+            && Math.Abs(targetWindowRect.Height - currentWindowRect.Height) < 0.1
+            && Math.Abs(targetWindowRect.Left - currentWindowRect.Left) < 0.1
+            && Math.Abs(targetWindowRect.Top - currentWindowRect.Top) < 0.1)
+        {
+            return;
+        }
+
+        Left = targetWindowRect.Left;
+        Top = targetWindowRect.Top;
+        Width = targetWindowRect.Width;
+        Height = targetWindowRect.Height;
+    }
+
+    private void ClearLoadedVisualDocumentState()
+    {
+        isLoadedVisualDocument = false;
+        frozenFrameContentScale = 1;
+    }
+
+    private void MarkLoadedVisualDocumentOpened()
+    {
+        isLoadedVisualDocument = true;
+        frozenFrameContentScale = 1;
+    }
+
+    private void ResetView()
+    {
+        frozenFrameContentScale = 1;
+        ApplyFrozenFrameContentScale();
+    }
+
+    private bool HasRenderedOcrOverlay() => wordBorders.Count > 0 || pdfTextLineOverlays.Count > 0;
+
+    private void ChangeFrozenFrameScale(int direction)
+    {
+        bool preserveExistingOcr = HasRenderedOcrOverlay();
+
+        if (preserveExistingOcr)
+            reDrawTimer.Stop();
+
+        if (!IsFreezeMode)
+            FreezeGrabFrame();
+
+        if (frameContentImageSource is null)
+            return;
+
+        frozenFrameContentScale = GrabFrameViewScaleUtilities.StepScale(
+            frozenFrameContentScale,
+            direction);
+
+        ApplyFrozenFrameContentScale();
+        ShowFrameMessage($"Image scale {frozenFrameContentScale:P0}");
+    }
+
     public HistoryInfo AsHistoryItem()
     {
         System.Drawing.Bitmap? bitmap = ImageMethods.ImageSourceToBitmap(frameContentImageSource);
@@ -819,6 +1213,8 @@ public partial class GrabFrame : Window
             ImageContent = bitmap,
             PositionRect = sizePosRect,
             IsTable = TableToggleButton.IsChecked!.Value,
+            ManualTableColumnSeparators = tableEditState.ManualColumnSeparators.Count > 0 ? [.. tableEditState.ManualColumnSeparators] : null,
+            ManualTableRowSeparators = tableEditState.ManualRowSeparators.Count > 0 ? [.. tableEditState.ManualRowSeparators] : null,
             SourceMode = TextGrabMode.GrabFrame,
         };
 
@@ -827,7 +1223,10 @@ public partial class GrabFrame : Window
 
     public void BreakWordBorderIntoWords(WordBorder wordBorder)
     {
-        ICollection<string> wordLines = wordBorder.Word.Split(Environment.NewLine);
+        ICollection<string> wordLines =
+            (string.IsNullOrWhiteSpace(wordBorder.DisplayText) ? wordBorder.Word : wordBorder.DisplayText)
+                .Replace("\r\n", "\n")
+                .Split('\n');
 
         const double widthScaleAdjustFactor = 1.5;
         ShouldSaveOnClose = true;
@@ -933,6 +1332,7 @@ public partial class GrabFrame : Window
 
     public void GrabFrame_Unloaded(object sender, RoutedEventArgs e)
     {
+        MainZoomBorder.ResetRequested -= MainZoomBorder_ResetRequested;
         Activated -= GrabFrameWindow_Activated;
         Closed -= Window_Closed;
         Deactivated -= GrabFrameWindow_Deactivated;
@@ -1510,6 +1910,95 @@ public partial class GrabFrame : Window
         return (viewBoxZoomFactor, -canvasOriginInBorder.X, -canvasOriginInBorder.Y);
     }
 
+    private sealed class OcrBorderRenderInfo
+    {
+        public double DisplayLineHeight { get; init; }
+
+        public string DisplayText { get; init; } = string.Empty;
+
+        public bool KeepSingleLineOutput { get; init; }
+
+        public int LineNumber { get; init; }
+
+        public Windows.Foundation.Rect SourceRect { get; init; }
+
+        public string Text { get; init; } = string.Empty;
+    }
+
+    private IReadOnlyList<OcrBorderRenderInfo> CreateOcrBorderRenderInfos(DpiScale dpi, double viewBoxZoomFactor)
+    {
+        if (ocrResultOfWindow is null)
+            return [];
+
+        List<OcrUtilities.PositionedOcrLine> positionedLines = [];
+
+        for (int i = 0; i < ocrResultOfWindow.Lines.Length; i++)
+        {
+            IOcrLine ocrLine = ocrResultOfWindow.Lines[i];
+            positionedLines.Add(new OcrUtilities.PositionedOcrLine(i, GetNormalizedOcrLineText(ocrLine), ocrLine.BoundingBox));
+        }
+
+        if (!(DefaultSettings.ParagraphDetection && isSpaceJoining))
+        {
+            return
+            [
+                .. positionedLines.Select(line => new OcrBorderRenderInfo
+                {
+                    DisplayText = line.Text,
+                    LineNumber = line.LineNumber,
+                    SourceRect = line.BoundingBox,
+                    Text = line.Text,
+                })
+            ];
+        }
+
+        return
+        [
+            .. OcrUtilities.GroupWrappedParagraphLines(positionedLines)
+                .Select(group => new OcrBorderRenderInfo
+                {
+                    DisplayLineHeight = group.Lines.Count > 1
+                        ? group.Lines.Average(line => GetDisplayHeightFromSourceHeight(line.BoundingBox.Height, dpi, windowFrameImageScale, viewBoxZoomFactor))
+                        : 0,
+                    DisplayText = group.DisplayText,
+                    KeepSingleLineOutput = group.Lines.Count > 1,
+                    LineNumber = group.StartingLineNumber,
+                    SourceRect = group.BoundingBox,
+                    Text = group.SingleLineText,
+                })
+        ];
+    }
+
+    private double GetDisplayHeightFromSourceHeight(double sourceHeight, DpiScale dpi, double sourceScale, double viewBoxZoomFactor)
+    {
+        return ((sourceHeight / (dpi.DpiScaleY * sourceScale)) + 2) / viewBoxZoomFactor;
+    }
+
+    private string GetNormalizedOcrLineText(IOcrLine ocrLine)
+    {
+        StringBuilder lineText = new();
+        ocrLine.GetTextFromOcrLine(isSpaceJoining, lineText);
+        lineText.RemoveTrailingNewlines();
+
+        string ocrText = lineText.ToString();
+
+        if (DefaultSettings.CorrectErrors)
+            ocrText = ocrText.TryFixEveryWordLetterNumberErrors();
+
+        if (DefaultSettings.CorrectToLatin)
+            ocrText = ocrText.ReplaceGreekOrCyrillicWithLatin();
+
+        if (CurrentLanguage!.IsRightToLeft())
+        {
+            StringBuilder rtlText = new(ocrText);
+            rtlText.ReverseWordsForRightToLeft();
+            rtlText.RemoveTrailingNewlines();
+            return rtlText.ToString();
+        }
+
+        return ocrText;
+    }
+
     private WordBorder CreateWordBorderFromSourceRect(
         Windows.Foundation.Rect sourceRect,
         double sourceScale,
@@ -1519,20 +2008,33 @@ public partial class GrabFrame : Window
         DpiScale dpi,
         double viewBoxZoomFactor,
         double borderToCanvasX,
-        double borderToCanvasY)
+        double borderToCanvasY,
+        string? displayText = null,
+        bool keepSingleLineOutput = false,
+        double displayLineHeight = 0)
     {
-        return new()
+        double contentScale = IsFreezeMode ? frozenFrameContentScale : 1;
+
+        WordBorder wordBorder = new()
         {
-            Width = ((sourceRect.Width / (dpi.DpiScaleX * sourceScale)) + 2) / viewBoxZoomFactor,
-            Height = ((sourceRect.Height / (dpi.DpiScaleY * sourceScale)) + 2) / viewBoxZoomFactor,
-            Top = ((sourceRect.Y / (dpi.DpiScaleY * sourceScale) - 1) + borderToCanvasY) / viewBoxZoomFactor,
-            Left = ((sourceRect.X / (dpi.DpiScaleX * sourceScale) - 1) + borderToCanvasX) / viewBoxZoomFactor,
-            Word = text,
+            DisplayLineHeight = displayLineHeight * contentScale,
+            Width = (((sourceRect.Width / (dpi.DpiScaleX * sourceScale)) + 2) / viewBoxZoomFactor) * contentScale,
+            Height = (((sourceRect.Height / (dpi.DpiScaleY * sourceScale)) + 2) / viewBoxZoomFactor) * contentScale,
+            KeepSingleLineOutput = keepSingleLineOutput,
+            Top = (((sourceRect.Y / (dpi.DpiScaleY * sourceScale) - 1) + borderToCanvasY) / viewBoxZoomFactor) * contentScale,
+            Left = (((sourceRect.X / (dpi.DpiScaleX * sourceScale) - 1) + borderToCanvasX) / viewBoxZoomFactor) * contentScale,
             OwnerGrabFrame = this,
             LineNumber = lineNumber,
             IsFromEditWindow = IsFromEditWindow,
             MatchingBackground = backgroundBrush,
         };
+
+        if (keepSingleLineOutput && !string.IsNullOrWhiteSpace(displayText))
+            wordBorder.DisplayText = displayText;
+        else
+            wordBorder.Word = text;
+
+        return wordBorder;
     }
 
     private void AddRenderedWordBorder(WordBorder wordBorderBox)
@@ -1554,11 +2056,12 @@ public partial class GrabFrame : Window
 
     private PdfTextLineOverlay CreatePdfTextLineOverlay(Windows.Foundation.Rect sourceRect, double sourceScale, string text, DpiScale dpi)
     {
+        double contentScale = IsFreezeMode ? frozenFrameContentScale : 1;
         Rect displayRect = new(
-            sourceRect.X / (dpi.DpiScaleX * sourceScale),
-            sourceRect.Y / (dpi.DpiScaleY * sourceScale),
-            sourceRect.Width / (dpi.DpiScaleX * sourceScale),
-            sourceRect.Height / (dpi.DpiScaleY * sourceScale));
+            (sourceRect.X / (dpi.DpiScaleX * sourceScale)) * contentScale,
+            (sourceRect.Y / (dpi.DpiScaleY * sourceScale)) * contentScale,
+            (sourceRect.Width / (dpi.DpiScaleX * sourceScale)) * contentScale,
+            (sourceRect.Height / (dpi.DpiScaleY * sourceScale)) * contentScale);
 
         PdfTextLineOverlay overlay = new(text);
         overlay.ApplyLayout(displayRect);
@@ -1645,7 +2148,6 @@ public partial class GrabFrame : Window
             shouldDisposeBmp = true;
         }
 
-        int lineNumber = 0;
         bool useImageCoords = frameContentImageSource is not null;
         (double viewBoxZoomFactor, double borderToCanvasX, double borderToCanvasY) =
             useImageCoords ? (1.0, 0.0, 0.0) : GetOverlayRenderMetrics();
@@ -1653,49 +2155,32 @@ public partial class GrabFrame : Window
         if (useImageCoords)
             SyncRectanglesCanvasSizeToImage();
 
-        foreach (IOcrLine ocrLine in ocrResultOfWindow.Lines)
-        {
-            StringBuilder lineText = new();
-            ocrLine.GetTextFromOcrLine(isSpaceJoining, lineText);
-            lineText.RemoveTrailingNewlines();
+        IReadOnlyList<OcrBorderRenderInfo> renderInfos = CreateOcrBorderRenderInfos(dpi, viewBoxZoomFactor);
 
-            Windows.Foundation.Rect lineRect = ocrLine.BoundingBox;
+        foreach (OcrBorderRenderInfo renderInfo in renderInfos)
+        {
+            Windows.Foundation.Rect lineRect = renderInfo.SourceRect;
 
             SolidColorBrush backgroundBrush = new(Colors.Black);
 
             if (bmp is not null)
                 backgroundBrush = GetBackgroundBrushFromOcrBitmap(windowFrameImageScale, bmp, ref lineRect);
 
-            string ocrText = lineText.ToString();
-
-            if (DefaultSettings.CorrectErrors)
-                ocrText = ocrText.TryFixEveryWordLetterNumberErrors();
-
-            if (DefaultSettings.CorrectToLatin)
-                ocrText = ocrText.ReplaceGreekOrCyrillicWithLatin();
-
             WordBorder wordBorderBox = CreateWordBorderFromSourceRect(
                 lineRect,
                 windowFrameImageScale,
-                ocrText,
-                lineNumber,
+                renderInfo.Text,
+                renderInfo.LineNumber,
                 backgroundBrush,
                 dpi,
                 viewBoxZoomFactor,
                 borderToCanvasX,
-                borderToCanvasY);
-
-            if (CurrentLanguage!.IsRightToLeft())
-            {
-                StringBuilder sb = new(ocrText);
-                sb.ReverseWordsForRightToLeft();
-                sb.RemoveTrailingNewlines();
-                wordBorderBox.Word = sb.ToString();
-            }
+                borderToCanvasY,
+                renderInfo.DisplayText,
+                renderInfo.KeepSingleLineOutput,
+                renderInfo.DisplayLineHeight);
 
             AddRenderedWordBorder(wordBorderBox);
-
-            lineNumber++;
         }
 
         SetRotationBasedOnOcrResult();
@@ -1970,6 +2455,12 @@ public partial class GrabFrame : Window
 
     private void Escape_Keyed(object sender, ExecutedRoutedEventArgs e)
     {
+        if (tableEditState.IsPlacementActive)
+        {
+            CancelTablePlacement();
+            return;
+        }
+
         if (wordBorders.Any(x => x.IsEditing))
         {
             GrabBTN.Focus();
@@ -1979,9 +2470,15 @@ public partial class GrabFrame : Window
         if (TextSearchUtilities.HasSearchText(SearchBox.Text) && SearchBox.Text != "Search For Text...")
             SearchBox.Text = "";
         else if (RectanglesCanvas.Children.Count > 0)
+        {
+            CancelTablePlacement(clearManualSeparators: true);
             ResetGrabFrame();
+        }
         else if (PdfTextCanvas.Children.Count > 0)
+        {
+            CancelTablePlacement(clearManualSeparators: true);
             ResetGrabFrame();
+        }
         else
             Close();
     }
@@ -2035,6 +2532,8 @@ public partial class GrabFrame : Window
 
         if (scrollBehavior == ScrollBehavior.ZoomWhenFrozen)
             MainZoomBorder.CanZoom = true;
+
+        ApplyFrozenFrameContentScale();
     }
 
     private void SyncRectanglesCanvasSizeToImage()
@@ -2048,14 +2547,16 @@ public partial class GrabFrame : Window
         // Using raw PixelWidth would cause the Viewbox to scale down at DPI > 100%,
         // shifting viewBoxZoomFactor and borderToCanvasX/Y, and misplacing word borders.
         DpiScale dpi = VisualTreeHelper.GetDpi(this);
-        double sourceWidth = source.PixelWidth > 0 ? source.PixelWidth / dpi.DpiScaleX : source.Width;
-        double sourceHeight = source.PixelHeight > 0 ? source.PixelHeight / dpi.DpiScaleY : source.Height;
+        double contentScale = IsFreezeMode ? frozenFrameContentScale : 1;
+        double sourceWidth = (source.PixelWidth > 0 ? source.PixelWidth / dpi.DpiScaleX : source.Width) * contentScale;
+        double sourceHeight = (source.PixelHeight > 0 ? source.PixelHeight / dpi.DpiScaleY : source.Height) * contentScale;
 
         if (double.IsFinite(sourceWidth) && sourceWidth > 0)
         {
             GrabFrameImage.Width = sourceWidth;
             PdfTextCanvas.Width = sourceWidth;
             RectanglesCanvas.Width = sourceWidth;
+            TablePlacementOverlayCanvas.Width = sourceWidth;
             TemplateRegionOverlayCanvas.Width = sourceWidth;
         }
 
@@ -2064,6 +2565,7 @@ public partial class GrabFrame : Window
             GrabFrameImage.Height = sourceHeight;
             PdfTextCanvas.Height = sourceHeight;
             RectanglesCanvas.Height = sourceHeight;
+            TablePlacementOverlayCanvas.Height = sourceHeight;
             TemplateRegionOverlayCanvas.Height = sourceHeight;
         }
     }
@@ -2671,6 +3173,8 @@ public partial class GrabFrame : Window
 
         reDrawTimer.Stop();
 
+        ClearLoadedVisualDocumentState();
+        CancelTablePlacement(clearManualSeparators: true);
         ResetGrabFrame();
         await Task.Delay(300);
 
@@ -2687,10 +3191,12 @@ public partial class GrabFrame : Window
         ClearLoadedPdfDocument();
         hasLoadedImageSource = true;
         isStaticImageSource = true;
+        MarkLoadedVisualDocumentOpened();
         frozenUiAutomationSnapshot = null;
         liveUiAutomationSnapshot = null;
         FreezeToggleButton.IsChecked = true;
         FreezeGrabFrame();
+        EnsureMinimumLoadedDocumentWindowSize();
         FreezeToggleButton.Visibility = Visibility.Collapsed;
         SwitchToOcrFallbackIfUiAutomation();
 
@@ -2708,10 +3214,32 @@ public partial class GrabFrame : Window
         FrameworkElement interactionSurface = isPdfTextInteraction
             ? (e.OriginalSource as FrameworkElement ?? PdfTextCanvas)
             : (GetInteractionSurface(sender) ?? RectanglesCanvas);
+        bool shouldPanInsteadOfSelect = MainZoomBorder.CanPan
+            && (IsPdfDocumentLoaded
+                ? IsZoomPanGestureActive
+                : (IsZoomPanGestureActive && !isPdfTextInteraction));
 
         reDrawTimer.Stop();
         if (!MainZoomBorder.CanPan)
             GrabBTN.Focus();
+
+        if (tableEditState.IsPlacementActive)
+        {
+            if (e.RightButton == MouseButtonState.Pressed
+                || e.MiddleButton == MouseButtonState.Pressed
+                || IsCtrlDown
+                || shouldPanInsteadOfSelect)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (e.ChangedButton == MouseButton.Left)
+            {
+                e.Handled = TryCommitTablePlacement(e.GetPosition(RectanglesCanvas));
+                return;
+            }
+        }
 
         if (e.RightButton == MouseButtonState.Pressed)
         {
@@ -2723,13 +3251,9 @@ public partial class GrabFrame : Window
         {
             if (e.MiddleButton == MouseButtonState.Pressed)
             {
-                MainZoomBorder.Reset();
+                ResetView();
                 return;
             }
-
-            bool shouldPanInsteadOfSelect = IsPdfDocumentLoaded
-                ? IsZoomPanGestureActive
-                : IsZoomPanGestureActive && !isPdfTextInteraction;
 
             if (shouldPanInsteadOfSelect)
                 return;
@@ -2774,11 +3298,29 @@ public partial class GrabFrame : Window
     {
         FrameworkElement interactionSurface = GetInteractionSurface(sender) ?? RectanglesCanvas;
         bool isPdfTextInteraction = IsPdfTextInteraction(sender);
+        bool shouldPanInsteadOfSelect = MainZoomBorder.CanPan
+            && ((IsPdfDocumentLoaded || !isPdfTextInteraction) && IsZoomPanGestureActive);
+
+        if (tableEditState.IsPlacementActive)
+        {
+            interactionSurface.Cursor = (!IsCtrlDown && !shouldPanInsteadOfSelect)
+                ? Cursors.Cross
+                : Cursors.Arrow;
+
+            if (IsCtrlDown || shouldPanInsteadOfSelect)
+            {
+                ClearTablePlacementPreview();
+                return;
+            }
+
+            UpdateTablePlacementPreview(e.GetPosition(RectanglesCanvas));
+            return;
+        }
 
         if (IsCtrlDown)
             interactionSurface.Cursor = Cursors.Cross;
         else if (MainZoomBorder.CanPan)
-            interactionSurface.Cursor = (IsPdfDocumentLoaded || !isPdfTextInteraction) && IsZoomPanGestureActive
+            interactionSurface.Cursor = shouldPanInsteadOfSelect
                 ? Cursors.SizeAll
                 : Cursors.Arrow;
         else
@@ -2789,10 +3331,7 @@ public partial class GrabFrame : Window
 
         isMiddleDown = e.MiddleButton == MouseButtonState.Pressed;
 
-        if (MainZoomBorder.CanPan
-            && (IsPdfDocumentLoaded
-                ? IsZoomPanGestureActive
-                : (IsZoomPanGestureActive && !isPdfTextInteraction)))
+        if (shouldPanInsteadOfSelect)
         {
             isSelecting = false;
             return;
@@ -2841,6 +3380,9 @@ public partial class GrabFrame : Window
         isSelecting = false;
         CursorClipper.UnClipCursor();
         Mouse.Captured?.ReleaseMouseCapture();
+
+        if (tableEditState.IsPlacementActive)
+            return;
 
         if (e.ChangedButton == MouseButton.Middle && scrollBehavior != ScrollBehavior.Zoom)
         {
@@ -2976,13 +3518,13 @@ new GrabFrameOperationArgs()
 
     private void RemoveTableLines()
     {
-        Canvas? tableLines = null;
+        List<Canvas> tableLines =
+            [.. RectanglesCanvas.Children
+                .OfType<Canvas>()
+                .Where(element => element.Tag is "TableLines")];
 
-        foreach (object? child in RectanglesCanvas.Children)
-            if (child is Canvas element && element.Tag is "TableLines")
-                tableLines = element;
-
-        RectanglesCanvas.Children.Remove(tableLines);
+        foreach (Canvas tableLineCanvas in tableLines)
+            RectanglesCanvas.Children.Remove(tableLineCanvas);
     }
 
     private void ReSearchTimer_Tick(object? sender, EventArgs e)
@@ -3074,12 +3616,17 @@ new GrabFrameOperationArgs()
 
     private void ResetGrabFrame()
     {
+        CancelTablePlacement();
+        RemoveTableLines();
+        AnalyzedResultTable = null;
         SetRefreshOrOcrFrameBtnVis();
 
         MainZoomBorder.Reset();
         RectanglesCanvas.RenderTransform = Transform.Identity;
         RectanglesCanvas.ClearValue(WidthProperty);
         RectanglesCanvas.ClearValue(HeightProperty);
+        TablePlacementOverlayCanvas.ClearValue(WidthProperty);
+        TablePlacementOverlayCanvas.ClearValue(HeightProperty);
         TemplateRegionOverlayCanvas.ClearValue(WidthProperty);
         TemplateRegionOverlayCanvas.ClearValue(HeightProperty);
         GrabFrameImage.ClearValue(WidthProperty);
@@ -3545,6 +4092,7 @@ new GrabFrameOperationArgs()
 
     private void TableToggleButton_Click(object? sender = null, RoutedEventArgs? e = null)
     {
+        CancelTablePlacement();
         RemoveTableLines();
         UpdateFrameText();
     }
@@ -3566,6 +4114,8 @@ new GrabFrameOperationArgs()
         try
         {
             ClearLoadedPdfDocument();
+            ClearLoadedVisualDocumentState();
+            CancelTablePlacement(clearManualSeparators: true);
             ResetGrabFrame();
             await Task.Delay(300);
             BitmapImage droppedImage = new();
@@ -3578,11 +4128,13 @@ new GrabFrameOperationArgs()
             frameContentImageSource = droppedImage;
             hasLoadedImageSource = true;
             isStaticImageSource = true;
+            MarkLoadedVisualDocumentOpened();
             frozenUiAutomationSnapshot = null;
             liveUiAutomationSnapshot = null;
             _currentImagePath = path;
             FreezeToggleButton.IsChecked = true;
             FreezeGrabFrame();
+            EnsureMinimumLoadedDocumentWindowSize();
             FreezeToggleButton.Visibility = Visibility.Collapsed;
             SwitchToOcrFallbackIfUiAutomation();
 
@@ -3590,6 +4142,7 @@ new GrabFrameOperationArgs()
         }
         catch (Exception)
         {
+            ClearLoadedVisualDocumentState();
             hasLoadedImageSource = false;
             UnfreezeGrabFrame();
             await new Wpf.Ui.Controls.MessageBox
@@ -3606,13 +4159,16 @@ new GrabFrameOperationArgs()
         try
         {
             ClearLoadedPdfDocument();
+            ClearLoadedVisualDocumentState();
             _loadedPdfDocument = await PdfDocumentRenderer.LoadAsync(path);
+            MarkLoadedVisualDocumentOpened();
             _currentImagePath = Path.GetFullPath(path);
             await ShowPdfPageAsync(0);
         }
         catch (Exception ex)
         {
             ClearLoadedPdfDocument();
+            ClearLoadedVisualDocumentState();
             hasLoadedImageSource = false;
             UnfreezeGrabFrame();
             await new Wpf.Ui.Controls.MessageBox
@@ -3663,6 +4219,12 @@ new GrabFrameOperationArgs()
         RemoveTableLines();
 
         List<WordBorderInfo> wbInfos = [.. wordBorders.Select(wb => new WordBorderInfo(wb))];
+        if (wbInfos.Count == 0)
+        {
+            AnalyzedResultTable = null;
+            tableEditState.SetManualSeparators(tableEditState.ManualRowSeparators, tableEditState.ManualColumnSeparators);
+            return wbInfos;
+        }
 
         Point windowPosition = this.GetAbsolutePosition();
         DpiScale dpi = VisualTreeHelper.GetDpi(this);
@@ -3677,7 +4239,14 @@ new GrabFrameOperationArgs()
         try
         {
             AnalyzedResultTable = new();
-            AnalyzedResultTable.AnalyzeAsTable(wbInfos, rectCanvasSize);
+            AnalyzedResultTable.AnalyzeAsTable(
+                wbInfos,
+                rectCanvasSize,
+                tableEditState.ManualRowSeparators,
+                tableEditState.ManualColumnSeparators);
+            tableEditState.SetManualSeparators(
+                AnalyzedResultTable.ManualRowSeparators,
+                AnalyzedResultTable.ManualColumnSeparators);
             if (AnalyzedResultTable.TableLines is not null)
                 RectanglesCanvas.Children.Add(AnalyzedResultTable.TableLines);
         }
@@ -3808,6 +4377,7 @@ new GrabFrameOperationArgs()
 
         reDrawTimer.Stop();
         ClearLoadedPdfDocument();
+        ClearLoadedVisualDocumentState();
         hasLoadedImageSource = false;
         isStaticImageSource = false;
         frozenUiAutomationSnapshot = null;
@@ -3916,6 +4486,7 @@ new GrabFrameOperationArgs()
             destinationTextBox.SelectedText = FrameText;
         }
 
+        UpdateTableEditingUiState();
         UpdateTemplateRegionOverlay();
     }
 
@@ -4055,7 +4626,17 @@ new GrabFrameOperationArgs()
 
     private void ResetViewMenuItem_Click(object sender, RoutedEventArgs e)
     {
-        MainZoomBorder.Reset();
+        ResetView();
+    }
+
+    private void ScaleUpMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        ChangeFrozenFrameScale(1);
+    }
+
+    private void ScaleDownMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        ChangeFrozenFrameScale(-1);
     }
 
     private void ShowWordBordersMenuItem_Click(object sender, RoutedEventArgs e)

@@ -222,6 +222,27 @@ REVENUES OVERY(UNDER) EXPENDITURES	$9,749	$0	$9,749	N/A";
         }
     }
 
+    [Fact]
+    public void GroupWrappedParagraphLines_CombinesWrappedLinesIntoParagraphBlocks()
+    {
+        List<OcrUtilities.PositionedOcrLine> lines =
+        [
+            new(0, "Static cling is the tendency", new Windows.Foundation.Rect(0, 0, 100, 10)),
+            new(1, "for light objects to stick.", new Windows.Foundation.Rect(0, 14, 100, 10)),
+            new(2, "New paragraph.", new Windows.Foundation.Rect(0, 32, 120, 12)),
+        ];
+
+        List<OcrUtilities.GroupedOcrLines> groups = OcrUtilities.GroupWrappedParagraphLines(lines);
+
+        Assert.Equal(2, groups.Count);
+        Assert.Equal(0, groups[0].StartingLineNumber);
+        Assert.Equal("Static cling is the tendency for light objects to stick.", groups[0].SingleLineText);
+        Assert.Equal($"Static cling is the tendency{Environment.NewLine}for light objects to stick.", groups[0].DisplayText);
+        Assert.Equal(0, groups[0].BoundingBox.Y);
+        Assert.Equal(24, groups[0].BoundingBox.Height);
+        Assert.Equal("New paragraph.", groups[1].SingleLineText);
+    }
+
     [WpfFact]
     public async Task ReadQrCode()
     {
