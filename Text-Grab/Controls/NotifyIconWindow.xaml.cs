@@ -53,7 +53,7 @@ public partial class NotifyIconWindow : Window
         App.DefaultLaunch();
     }
 
-    private void Window_Activated(object sender, EventArgs e)
+    private void Window_Loaded(object sender, RoutedEventArgs e)
     {
         Hide();
         NotifyIcon.Visibility = Visibility.Visible;

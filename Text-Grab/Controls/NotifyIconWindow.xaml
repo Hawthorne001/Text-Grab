@@ -10,14 +10,15 @@
     Title="NotifyIconWindow"
     Width="0"
     Height="0"
-    Activated="Window_Activated"
+    Loaded="Window_Loaded"
     Background="Transparent"
     IsHitTestVisible="False"
     Left="-50"
     Opacity="0"
-    ShowInTaskbar="True"
+    ShowActivated="False"
+    ShowInTaskbar="False"
     Top="-50"
-    WindowStyle="ToolWindow"
+    WindowStyle="None"
     mc:Ignorable="d">
     <Grid>
         <WpfUiIcon:NotifyIcon
