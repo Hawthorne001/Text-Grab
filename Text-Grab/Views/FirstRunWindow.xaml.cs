@@ -141,6 +141,11 @@ public partial class FirstRunWindow : FluentWindow
         this.Close();
     }
 
+    private void LicensesButton_Click(object sender, RoutedEventArgs e)
+    {
+        WindowUtilities.OpenOrActivateWindow<LicensesWindow>();
+    }
+
     private async void StartupCheckbox_Checked(object sender, RoutedEventArgs e)
     {
         if (sender is ToggleSwitch toggleSwitch && toggleSwitch.IsChecked is not null)

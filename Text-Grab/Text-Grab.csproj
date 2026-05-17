@@ -46,6 +46,18 @@
             <Pack>True</Pack>
             <PackagePath>\</PackagePath>
         </None>
+        <None Include="..\BUILT-WITH.md">
+            <Link>BUILT-WITH.md</Link>
+            <Pack>True</Pack>
+            <PackagePath>\</PackagePath>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+        <None Include="..\ThirdPartyNotices\licenses\**\*">
+            <Link>ThirdPartyNotices\licenses\%(RecursiveDir)%(Filename)%(Extension)</Link>
+            <Pack>True</Pack>
+            <PackagePath>ThirdPartyNotices\licenses\%(RecursiveDir)</PackagePath>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
         <None Include="..\Text-Grab-Package\Images\SmallTile.scale-125.png">
             <Pack>True</Pack>
             <PackagePath>\</PackagePath>

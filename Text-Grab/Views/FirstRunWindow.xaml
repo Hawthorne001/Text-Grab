@@ -432,8 +432,18 @@
 
                 <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
                     <controls:CollapsibleButton
+                        x:Name="LicensesButton"
+                        Width="130"
+                        Background="DimGray"
+                        ButtonSymbol="DocumentText24"
+                        ButtonText="Licenses"
+                        CanChangeStyle="False"
+                        Click="LicensesButton_Click" />
+
+                    <controls:CollapsibleButton
                         x:Name="SettingsButton"
                         Width="110"
+                        Margin="20,0,0,0"
                         Background="DimGray"
                         ButtonSymbol="Settings24"
                         ButtonText="Settings"
