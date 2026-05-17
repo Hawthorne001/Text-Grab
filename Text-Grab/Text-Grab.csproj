@@ -13,7 +13,7 @@
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <Platforms>x64;x86;ARM64</Platforms>
         <Copyright>Joseph Finney 2026</Copyright>
-        <PackageProjectUrl>TextGrab.net</PackageProjectUrl>
+        <PackageProjectUrl>https://textgrab.net</PackageProjectUrl>
         <RepositoryType>git</RepositoryType>
         <RepositoryUrl>https://github.com/TheJoeFin/Text-Grab</RepositoryUrl>
         <PackageReadmeFile>README.md</PackageReadmeFile>

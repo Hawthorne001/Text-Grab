@@ -2,15 +2,12 @@
 using Microsoft.Win32;
 using RegistryUtils;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Markup;
-using System.Windows.Media;
 using System.Windows.Threading;
 using Text_Grab.Controls;
 using Text_Grab.Models;
@@ -20,7 +17,6 @@ using Text_Grab.Utilities;
 using Text_Grab.Views;
 using Wpf.Ui;
 using Wpf.Ui.Appearance;
-using Wpf.Ui.Extensions;
 
 namespace Text_Grab;
 
@@ -29,6 +25,12 @@ namespace Text_Grab;
 /// </summary>
 public partial class App : System.Windows.Application
 {
+    internal readonly record struct StartupArguments(
+        bool IsQuiet,
+        bool OpenInGrabFrame,
+        string? PrimaryArgument,
+        string? GrabFramePath);
+
     #region Fields
 
     private static readonly Settings _defaultSettings = AppUtilities.TextGrabSettings;
@@ -227,58 +229,63 @@ public partial class App : System.Windows.Application
         return true;
     }
 
-    private static readonly HashSet<string> KnownFlags = ["--windowless", "--grabframe"];
-
-    private static async Task<bool> HandleStartupArgs(string[] args)
+    internal static StartupArguments ParseStartupArguments(IEnumerable<string> args)
     {
-        string currentArgument = args[0];
-
         bool isQuiet = false;
         bool openInGrabFrame = false;
+        string? primaryArgument = null;
+        string? grabFramePath = null;
 
         foreach (string arg in args)
         {
-            if (arg == "--windowless")
+            if (string.Equals(arg, "--windowless", StringComparison.OrdinalIgnoreCase))
             {
                 isQuiet = true;
-                _defaultSettings.FirstRun = false;
-                _defaultSettings.Save();
+                continue;
             }
-            else if (arg == "--grabframe")
+
+            if (string.Equals(arg, "--grabframe", StringComparison.OrdinalIgnoreCase))
             {
                 openInGrabFrame = true;
+                continue;
+            }
+
+            primaryArgument ??= arg;
+
+            if (grabFramePath is not null)
+                continue;
+
+            try
+            {
+                string absolutePath = Path.GetFullPath(arg);
+                if (File.Exists(absolutePath))
+                    grabFramePath = absolutePath;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Invalid path argument: {arg}, error: {ex.Message}");
             }
         }
 
-        // Handle --grabframe flag: open the next argument (file path) in GrabFrame
-        if (openInGrabFrame)
-        {
-            // Find the file path argument (skip known flags)
-            string? filePath = null;
-            foreach (string arg in args)
-            {
-                if (!KnownFlags.Contains(arg))
-                {
-                    // Convert to absolute path to handle relative paths correctly
-                    try
-                    {
-                        string absolutePath = Path.GetFullPath(arg);
-                        if (File.Exists(absolutePath))
-                        {
-                            filePath = absolutePath;
-                            break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Invalid path argument: {arg}, error: {ex.Message}");
-                    }
-                }
-            }
+        return new StartupArguments(isQuiet, openInGrabFrame, primaryArgument, grabFramePath);
+    }
 
-            if (!string.IsNullOrEmpty(filePath))
+    private static async Task<bool> HandleStartupArgs(string[] args)
+    {
+        StartupArguments startupArguments = ParseStartupArguments(args);
+
+        if (startupArguments.IsQuiet)
+        {
+            _defaultSettings.FirstRun = false;
+            _defaultSettings.Save();
+        }
+
+        // Handle --grabframe flag: open the next argument (file path) in GrabFrame
+        if (startupArguments.OpenInGrabFrame)
+        {
+            if (!string.IsNullOrEmpty(startupArguments.GrabFramePath))
             {
-                GrabFrame gf = new(filePath);
+                GrabFrame gf = new(startupArguments.GrabFramePath);
                 gf.Show();
                 return true;
             }
@@ -289,12 +296,17 @@ public partial class App : System.Windows.Application
             }
         }
 
-        if (currentArgument.Contains("ToastActivated"))
+        if (string.IsNullOrWhiteSpace(startupArguments.PrimaryArgument))
+            return false;
+
+        string currentArgument = startupArguments.PrimaryArgument;
+
+        if (currentArgument.Contains("ToastActivated", StringComparison.Ordinal))
         {
             Debug.WriteLine("Launched from toast");
             return true;
         }
-        else if (currentArgument == "Settings")
+        else if (string.Equals(currentArgument, "Settings", StringComparison.OrdinalIgnoreCase))
         {
             SettingsWindow sw = new();
             sw.Show();
@@ -309,7 +321,7 @@ public partial class App : System.Windows.Application
             return true;
         }
 
-        bool openedFile = await TryToOpenFilePathAsync(currentArgument, isQuiet);
+        bool openedFile = await TryToOpenFilePathAsync(currentArgument, startupArguments.IsQuiet);
         if (openedFile)
             return true;
 

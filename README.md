@@ -23,9 +23,9 @@
 
 This is a minimal optical character recognition (OCR) utility for Windows 10/11 which makes all visible text available to be copied. 
 
-Too often text is trapped within images, videos, or within parts of applications and cannot be selected. Text Grab takes a screenshot, passes that image to the OCR engine, then puts the text into the clipboard for use anywhere. The OCR is done locally by [Windows API](https://docs.microsoft.com/en-us/uwp/api/Windows.Media.Ocr). This enables Text Grab to have essentially no UI and not require a constantly running background process. Working with text can be much more than just copying text from images, so Text Grab has a range of different modes to make working with text fast and easy. 
+Too often text is trapped within images, videos, or parts of applications and cannot be selected. Text Grab takes a screenshot, passes that image to the OCR engine, then puts the text into the clipboard for use anywhere. The OCR is done locally by the [Windows OCR API](https://learn.microsoft.com/uwp/api/windows.media.ocr). This enables Text Grab to have essentially no UI and not require a constantly running background process. Working with text can be much more than just copying text from images, so Text Grab has a range of different modes to make working with text fast and easy.
 
-I am the author of the [PowerToy Text Extractor](https://learn.microsoft.com/en-us/windows/powertoys/text-extractor). The Full-Screen Grab mode of this app was the basis of that PowerToy
+I am the author of the [PowerToys Text Extractor](https://learn.microsoft.com/en-us/windows/powertoys/text-extractor). The Full-Screen Grab mode of this app was the basis for that PowerToy.
 
 ## How to Install
 
@@ -40,26 +40,34 @@ I am the author of the [PowerToy Text Extractor](https://learn.microsoft.com/en-
 - [choco](https://community.chocolatey.org) - `choco install text-grab`
 
 ## How to Build
+
+Text Grab is a Windows application, so build and test it on Windows.
+
 Get the code:
-- Install git: https://git-scm.com/download/win
-- git clone https://github.com/TheJoeFin/Text-Grab.git
+- Install Git: https://git-scm.com/download/win
+    - `winget install git.git`
+- `git clone https://github.com/TheJoeFin/Text-Grab.git`
 
-### With Visual Studio 2019 or 2022
-- Install the Visual Studio (the free community edition is sufficient).
-    - Install the "Universal Windows Platform Development" workload.
+### With Visual Studio 2022
+- Install Visual Studio 2022 (the free Community edition is sufficient).
+    - Install the "Universal Windows Platform development" workload.
     - Install the ".NET desktop development" workload.
-    - Install ".NET cross-platform development" toolset
-    - Install Windows 10 SDK (10.0.19041.0)
-- Open `\Text-Grab\Text-Grab.sln` in Visual Studio.
-- Set Text-Grab-Package as Startup Project
-- Set CPU Target to x86 or x64
-- Key F5 or Press "▶ Local Machine"
+    - Install the ".NET cross-platform development" workload.
+    - Install Windows 10 SDK `10.0.22621.0`
+- Open `Text-Grab.sln` in Visual Studio.
+- Set `Text-Grab-Package` as the startup project.
+- Set the CPU target to `x64` or `ARM64`.
+- Press `F5` or choose **Local Machine**.
 
-### With Visual Studio Code (VS Code)
-- Install Visual Studio Code https://code.visualstudio.com/
-- Install .NET 6.0 SDK https://dotnet.microsoft.com/download/dotnet/6.0
-- Open `\Text-Grab\` Folder in VS Code (Same folder as .sln file)
-- Key F5 to launch with debugger
+### With the .NET SDK or Visual Studio Code
+- Install the .NET 10 SDK: https://dotnet.microsoft.com/download/dotnet/10.0
+- This repository pins SDK `10.0.100` in `global.json`.
+- Optional for debugging: install Visual Studio Code https://code.visualstudio.com/ and the C# extension / C# Dev Kit.
+- Open the `Text-Grab` folder in VS Code.
+- Restore dependencies with `dotnet restore Text-Grab.sln`
+- Build with `dotnet build Text-Grab\Text-Grab.csproj`
+- Run tests with `dotnet test Tests\Tests.csproj`
+- In VS Code, press `F5` to launch with the included debug configuration.
 
 ## Text Grab has Four Modes
 
@@ -82,9 +90,9 @@ The underlying OCR technology is the same as the full screen mode and has all of
 
 ### 3. Edit Text Window
 
-Similar to Notepad, the Edit Text Window is a "Pure Text" editing experience, with no formatting. This means copying text into or out of the Window will remove all formatting, but linebreaks and tabs will remain. Gather text using Full Screen Grabs or Grab Frames.
+Similar to Notepad, the Edit Text Window is a pure-text editing experience with no formatting. This means copying text into or out of the window removes formatting, but line breaks and tabs remain. Gather text using Full-Screen Grabs or Grab Frames.
 
-There are several tools with in the Edit Text Window which make it quick and easy to fix or change text.
+There are several tools within the Edit Text Window which make it quick and easy to fix or change text.
 - List files and folders in chosen directory
 - Watch clipboard for changes
 - Make text into a single line
@@ -103,7 +111,7 @@ There are several tools with in the Edit Text Window which make it quick and eas
 ### 4. Quick Simple Lookup
 ![Quick Simple Lookup](images/Quick-Simple-Lookup.gif)
 
-This mode of Text Grab is not about OCR, but instead it is about retreiving frequently used text. Think of Quick Simple Lookup as your long term memory. Use it to store frequently used URLs, emails, part numbers, etc. Basically a custom dictionary you can edit and recall instantly at any time. The workflow for Quick Simple Lookup is designed to be fast and functional, here is how it works.
+This mode of Text Grab is not about OCR, but instead it is about retrieving frequently used text. Think of Quick Simple Lookup as your long-term memory. Use it to store frequently used URLs, emails, part numbers, and more. It is basically a custom dictionary you can edit and recall instantly at any time. The workflow for Quick Simple Lookup is designed to be fast and functional:
 
 1. Press the hotkey (Default is Win + Shift + Q)
 2. Begin typing to filter the lookup to the item you want
@@ -111,15 +119,18 @@ This mode of Text Grab is not about OCR, but instead it is about retreiving freq
 4. Then paste the value you just copied into the application you are using
 
 
-### Bonus. Command Line Interface
+## Command Line Interface
 
 Arguments
 - `Fullscreen` launches into Fullscreen Grab mode
 - `GrabFrame` launches a new Grab Frame
 - `EditText` launches a new Edit Text Window
-- "Settings` opens Text Grab settings
-- `"file path"` Text Grab will open the file if it is a Text file, but if it is an image file it will OCR the file and place the results into a new Edit Text Window.
-- `"folder path"` e.g. `.\Text-Grab.exe "C:\Users\myPC\Downloads"` Text Grab will launch a new Edit Text Window and scan all images in that directory.
+- `QuickLookup` launches Quick Simple Lookup
+- `Settings` opens Text Grab settings
+- `--grabframe "file path"` opens a supported image or PDF directly in Grab Frame
+- `--windowless "file path"` reads or OCRs a file and copies the resulting text without opening a window
+- `"file path"` opens text files in Edit Text and opens supported image or PDF files in Grab Frame
+- `"folder path"` e.g. `.\Text-Grab.exe "C:\Users\myPC\Downloads"` launches a new Edit Text Window and scans the images in that directory
 
 ## Principles
 Text Grab is designed to have multiple modes, from minimal to fully featured; all focused on productivity. By using Windows 10’s OCR capabilities Text Grab can launch quickly without needing to run in the background. Pinning Text Grab to the Taskbar enables launching via keyboard shortcut. Now with version 2.4 when the background process is enabled Text Grab can be activated from anywhere using global hotkeys. The full-screen mode is designed to be used hundreds of times a day. Reducing clicks and menus means saving time, which is the primary focus of Text Grab. The Grab Frame tool can be positioned on top of any text content for quick OCR any time. When it comes to manipulating the text you've copied the Edit Text Window offers a wide range of tools to speed up common tasks and take the raw text into clean usable content.
