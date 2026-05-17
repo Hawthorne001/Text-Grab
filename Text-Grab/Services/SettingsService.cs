@@ -311,6 +311,15 @@ internal class SettingsService : IDisposable
             ref _cachedPostGrabCheckStates);
     }
 
+    internal void ReconcileManagedJsonSettings()
+    {
+        foreach (string propertyName in ManagedJsonSettingFiles.Keys)
+        {
+            InvalidateManagedJsonCache(propertyName);
+            _ = ReadManagedJsonSettingText(propertyName);
+        }
+    }
+
     private void HandleManagedJsonSettingChanged(string propertyName)
     {
         InvalidateManagedJsonCache(propertyName);
