@@ -57,7 +57,7 @@ public class ClipboardUtilities
 
         if (!ClipboardContainsBase64Image())
         {
-            IDataObject clipboardData = System.Windows.Clipboard.GetDataObject();
+            IDataObject? clipboardData = System.Windows.Clipboard.GetDataObject();
             if (clipboardData is null
                 || !clipboardData.GetDataPresent(System.Windows.Forms.DataFormats.Bitmap))
                 return (false, null);

@@ -3775,7 +3775,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             _calculationService.ClearParameters();
             UpdateAggregateStatusDisplay();
             // Keep scrolls aligned even when clearing
-            Dispatcher.BeginInvoke(SyncCalcScrollToMain, DispatcherPriority.Render);
+            await Dispatcher.InvokeAsync(SyncCalcScrollToMain, DispatcherPriority.Render);
             return;
         }
 
@@ -3793,7 +3793,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         UpdateAggregateStatusDisplay();
 
         // After updating calc text, its ScrollViewer resets; resync to main scroll
-        Dispatcher.BeginInvoke(SyncCalcScrollToMain, DispatcherPriority.Render);
+        await Dispatcher.InvokeAsync(SyncCalcScrollToMain, DispatcherPriority.Render);
 
         // Optional status (kept commented)
         // if (result.ErrorCount == 0) { } else { }

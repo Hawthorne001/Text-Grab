@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Windows.AI.Imaging;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -253,7 +254,13 @@ public static partial class OcrUtilities
 
         if (language is WindowsAiLang winAiLang)
         {
-            return new WinAiOcrLinesWords(await WindowsAiUtilities.GetOcrResultAsync(scaledBitmap));
+            RecognizedText? recognizedText = await WindowsAiUtilities.GetOcrResultAsync(scaledBitmap);
+            if (recognizedText is not null)
+                return new WinAiOcrLinesWords(recognizedText);
+
+            language = LanguageUtilities.GetCurrentInputLanguage().AsLanguage() is Language fallbackLanguage
+                ? new GlobalLang(fallbackLanguage)
+                : new GlobalLang("en-US");
         }
 
         if (language is not GlobalLang globalLang)
