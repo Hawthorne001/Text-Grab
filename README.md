@@ -141,6 +141,8 @@ Text Grab is designed to have multiple modes, from minimal to fully featured; al
 - CliWrap: https://github.com/Tyrrrz/CliWrap
 - Microsoft Community Toolkit: https://github.com/CommunityToolkit
 
+For the current direct NuGet dependency list and local third-party license notices, see [BUILT-WITH.md](BUILT-WITH.md).
+
 ### Thanks for using Text Grab
 Hopefully this simple app makes you more productive and saves you time from transcribing text.
 If you have any questions or feedback reach out on Twitter [@TheJoeFin](http://www.twitter.com/thejoefin) or by email joe@textgrab.net
