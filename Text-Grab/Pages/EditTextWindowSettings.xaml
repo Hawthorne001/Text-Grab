@@ -64,6 +64,17 @@
             Style="{StaticResource TextBodyNormal}"
             Text="Remember and restore the Edit Text Window's size and position between sessions." />
 
+        <CheckBox
+            x:Name="EtwNormalizeLineEndingsOnPasteCheckBox"
+            Margin="0,4,0,0"
+            Click="EtwNormalizeLineEndingsOnPasteCheckBox_Click"
+            Content="Normalize to Windows line endings on paste" />
+        <TextBlock
+            Margin="24,0,0,8"
+            Opacity="0.75"
+            Style="{StaticResource TextBodyNormal}"
+            Text="Convert Unix (LF) and classic Mac (CR) line endings to Windows (CRLF) when pasting text." />
+
         <TextBlock
             Margin="0,16,0,6"
             FontSize="18"
