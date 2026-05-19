@@ -1143,26 +1143,6 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
 
-        if (e.Key != Key.Enter || SpreadsheetDataGrid.CurrentCell.Column is null)
-            return;
-
-        int currentRowIndex = SpreadsheetDataGrid.Items.IndexOf(SpreadsheetDataGrid.CurrentItem);
-        int currentColumnIndex = SpreadsheetDataGrid.CurrentCell.Column.DisplayIndex;
-        int lastLogicalRowIndex = (tableDocument?.RowCount ?? spreadsheetTable.Rows.Count) - 1;
-
-        if (currentRowIndex != lastLogicalRowIndex)
-            return;
-
-        _ = SpreadsheetDataGrid.CommitEdit(DataGridEditingUnit.Cell, true);
-        _ = SpreadsheetDataGrid.CommitEdit(DataGridEditingUnit.Row, true);
-        SyncSpreadsheetDocumentFromTable();
-
-        e.Handled = true;
-        int insertRowIndex = lastLogicalRowIndex + 1;
-        ApplySpreadsheetDocumentChange(
-            document => document.InsertRow(insertRowIndex),
-            insertRowIndex,
-            currentColumnIndex);
     }
 
     private void SpreadsheetDataGrid_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1307,6 +1287,9 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
         if (string.IsNullOrEmpty(clipboardText))
             return;
+
+        if (AppUtilities.TextGrabSettings.EtwNormalizeLineEndingsOnPaste)
+            clipboardText = NormalizeLineEndings(clipboardText);
 
         int startRow = Math.Max(0, SpreadsheetDataGrid.Items.IndexOf(SpreadsheetDataGrid.CurrentItem));
         int startCol = Math.Max(0, SpreadsheetDataGrid.CurrentCell.Column?.DisplayIndex ?? 0);
@@ -1971,7 +1954,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     {
         Style style = new(typeof(System.Windows.Controls.TextBox));
         style.Setters.Add(new Setter(System.Windows.Controls.TextBox.TextWrappingProperty, CreateSpreadsheetCellTextWrappingBinding(columnIndex)));
-        style.Setters.Add(new Setter(System.Windows.Controls.TextBox.AcceptsReturnProperty, true));
+        style.Setters.Add(new Setter(System.Windows.Controls.TextBox.AcceptsReturnProperty, false));
         style.Setters.Add(new Setter(System.Windows.Controls.TextBox.VerticalContentAlignmentProperty, VerticalAlignment.Top));
         return style;
     }
@@ -2230,8 +2213,14 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         WindowUtilities.OpenOrActivateWindow<FirstRunWindow>();
     }
 
+    private static string NormalizeLineEndings(string text) =>
+        text.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
+
     private void AddCopiedTextToTextBox(string textToAdd)
     {
+        if (AppUtilities.TextGrabSettings.EtwNormalizeLineEndingsOnPaste)
+            textToAdd = NormalizeLineEndings(textToAdd);
+
         PassedTextControl.SelectedText = textToAdd;
         int currentSelectionIndex = PassedTextControl.SelectionStart;
         int currentSelectionLength = PassedTextControl.SelectionLength;
