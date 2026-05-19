@@ -11,6 +11,7 @@ using Text_Grab.Properties;
 using Text_Grab.Services;
 using Text_Grab.Utilities;
 using Text_Grab.Views;
+using System.Runtime.InteropServices;
 using Wpf.Ui.Tray.Controls;
 
 namespace Text_Grab.Controls;
@@ -56,6 +57,7 @@ public partial class NotifyIconWindow : Window
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
         Hide();
+        HideFromAltTab();
         NotifyIcon.Visibility = Visibility.Visible;
 
         string toolTipText = "Text Grab";
@@ -134,6 +136,13 @@ public partial class NotifyIconWindow : Window
             NotifyIcon.Visibility = Visibility.Visible;
     }
 
+    private void HideFromAltTab()
+    {
+        IntPtr handle = new WindowInteropHelper(this).Handle;
+        int exStyle = NativeMethods.GetWindowLong(handle, NativeMethods.GWL_EX_STYLE);
+        NativeMethods.SetWindowLong(handle, NativeMethods.GWL_EX_STYLE, (exStyle | NativeMethods.WS_EX_TOOLWINDOW) & ~NativeMethods.WS_EX_APPWINDOW);
+    }
+
     private IntPtr NotifyIconWindowMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if ((uint)msg == NativeMethods.WM_TASKBARCREATED)
@@ -191,7 +200,7 @@ public partial class NotifyIconWindow : Window
 
         BitmapSource? bitmapSource = null;
 
-        if (clipboardImage is System.Windows.Interop.InteropBitmap interopBitmap)
+        if (clipboardImage is InteropBitmap interopBitmap)
         {
             System.Drawing.Bitmap bmp = ImageMethods.InteropBitmapToBitmap(interopBitmap);
             bitmapSource = ImageMethods.BitmapToImageSource(bmp);

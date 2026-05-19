@@ -29,4 +29,14 @@ internal static partial class NativeMethods
 
     [LibraryImport("shell32.dll")]
     public static partial void SHChangeNotify(int wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
+
+    public const int GWL_EX_STYLE = -20;
+    public const int WS_EX_APPWINDOW = 0x00040000;
+    public const int WS_EX_TOOLWINDOW = 0x00000080;
+
+    [DllImport("user32.dll")]
+    public static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    public static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 }

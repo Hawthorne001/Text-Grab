@@ -10,14 +10,15 @@
     Title="NotifyIconWindow"
     Width="0"
     Height="0"
-    Loaded="Window_Loaded"
     Background="Transparent"
     IsHitTestVisible="False"
     Left="-50"
+    Loaded="Window_Loaded"
     Opacity="0"
     ShowActivated="False"
     ShowInTaskbar="False"
     Top="-50"
+    Visibility="Hidden"
     WindowStyle="None"
     mc:Ignorable="d">
     <Grid>
