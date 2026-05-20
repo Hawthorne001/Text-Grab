@@ -1,4 +1,6 @@
-﻿using System.Text;
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
 using Text_Grab;
 using Text_Grab.Utilities;
 
@@ -6,6 +8,20 @@ namespace Tests;
 
 public class StringMethodTests
 {
+    private sealed class PredictableRandom(params int[] values) : Random
+    {
+        private readonly Queue<int> values = new(values);
+
+        public override int Next(int maxValue)
+        {
+            Assert.NotEmpty(values);
+
+            int nextValue = values.Dequeue();
+            Assert.InRange(nextValue, 0, maxValue - 1);
+            return nextValue;
+        }
+    }
+
     [Fact]
     public void MakeMultiLineStringSingleLine()
     {
@@ -26,6 +42,36 @@ lines
     public void MakeStringSingleLine_NewlineOnly_ReturnsEmptyString()
     {
         Assert.Equal(string.Empty, Environment.NewLine.MakeStringSingleLine());
+    }
+
+    [Fact]
+    public void JoinLines_WithJoiningTextAndAffixes_AsExpected()
+    {
+        string input = $"alpha{Environment.NewLine}beta{Environment.NewLine}gamma";
+
+        string actual = input.JoinLines(", ", trimLineBeforeJoining: false, "[", "]");
+
+        Assert.Equal("[alpha, beta, gamma]", actual);
+    }
+
+    [Fact]
+    public void JoinLines_TrimEachLineBeforeJoining_AsExpected()
+    {
+        string input = " alpha \r\n\tbeta\t\r\ngamma  ";
+
+        string actual = input.JoinLines(" | ", trimLineBeforeJoining: true);
+
+        Assert.Equal("alpha | beta | gamma", actual);
+    }
+
+    [Fact]
+    public void JoinLines_TrailingLineBreak_DoesNotAddExtraJoiningText()
+    {
+        const string input = "alpha\nbeta\n";
+
+        string actual = input.JoinLines(", ", trimLineBeforeJoining: false);
+
+        Assert.Equal("alpha, beta", actual);
     }
 
     [Theory]
@@ -166,6 +212,34 @@ Another Line";
 
         // Then
         Assert.Equal(expectedString, actualString);
+    }
+
+    [Fact]
+    public void ShuffleLines_UsesProvidedRandom()
+    {
+        string inputString = @"one
+two
+three
+four";
+
+        string actualString = inputString.ShuffleLines(new PredictableRandom(1, 1, 0));
+
+        Assert.Equal(
+            @"three
+one
+four
+two",
+            actualString);
+    }
+
+    [Fact]
+    public void ShuffleLines_PreservesTrailingNewline()
+    {
+        string inputString = $"alpha{Environment.NewLine}beta{Environment.NewLine}";
+
+        string actualString = inputString.ShuffleLines(new PredictableRandom(0));
+
+        Assert.Equal($"beta{Environment.NewLine}alpha{Environment.NewLine}", actualString);
     }
 
     // { ' ', '"', '*', '/', ':', '<', '>', '?', '\\', '|', '+', ',', '.', ';', '=', '[', ']', '!', '@' }; 

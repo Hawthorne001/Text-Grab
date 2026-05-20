@@ -314,6 +314,26 @@ public static partial class StringMethods
         return workingString.ToString();
     }
 
+    public static string JoinLines(this string textToJoin, string joiningText, bool trimLineBeforeJoining, string textAtBeginning = "", string textAtEnd = "")
+    {
+        ArgumentNullException.ThrowIfNull(textToJoin);
+        ArgumentNullException.ThrowIfNull(joiningText);
+        ArgumentNullException.ThrowIfNull(textAtBeginning);
+        ArgumentNullException.ThrowIfNull(textAtEnd);
+
+        string normalizedText = NewlineRegex().Replace(textToJoin, Environment.NewLine);
+        string[] lines = normalizedText.Split([Environment.NewLine], StringSplitOptions.None);
+
+        if (normalizedText.EndsWith(Environment.NewLine, StringComparison.Ordinal) && lines.Length > 0)
+            lines = [.. lines[..^1]];
+
+        if (trimLineBeforeJoining)
+            lines = [.. lines.Select(line => line.Trim())];
+
+        string joinedText = string.Join(joiningText, lines);
+        return $"{textAtBeginning}{joinedText}{textAtEnd}";
+    }
+
     public static string ToCamel(this string stringToCamel)
     {
         string toReturn = string.Empty;
@@ -734,6 +754,31 @@ public static partial class StringMethods
                 uniqueLines.Add(originalLine);
 
         return string.Join(Environment.NewLine, [.. uniqueLines]);
+    }
+
+    public static string ShuffleLines(this string textToShuffle, Random? random = null)
+    {
+        ArgumentNullException.ThrowIfNull(textToShuffle);
+
+        string[] lines = textToShuffle.Split([Environment.NewLine], StringSplitOptions.None);
+        bool endsWithNewline = textToShuffle.EndsWith(Environment.NewLine, StringComparison.Ordinal);
+
+        if (endsWithNewline)
+            lines = [.. lines[..^1]];
+
+        if (lines.Length <= 1)
+            return textToShuffle;
+
+        random ??= Random.Shared;
+
+        for (int i = lines.Length - 1; i > 0; i--)
+        {
+            int swapIndex = random.Next(i + 1);
+            (lines[i], lines[swapIndex]) = (lines[swapIndex], lines[i]);
+        }
+
+        string shuffledText = string.Join(Environment.NewLine, lines);
+        return endsWithNewline ? $"{shuffledText}{Environment.NewLine}" : shuffledText;
     }
 
     public static string RemoveAllInstancesOf(this string stringToBeEdited, string stringToRemove)
