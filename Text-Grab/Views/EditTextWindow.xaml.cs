@@ -238,6 +238,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         PassedTextControl.Text = PassedTextControl.Text.AddCharsToEachLine(stringToAdd, spotInLine);
     }
 
+    public void JoinLinesInEditTextWindow(string joiningText, bool trimLineBeforeJoining, string textAtBeginning = "", string textAtEnd = "")
+    {
+        ApplySelectedTextOrAllTextTransform(text => text.JoinLines(joiningText, trimLineBeforeJoining, textAtBeginning, textAtEnd));
+    }
+
     public void AddThisText(string textToAdd)
     {
         PassedTextControl.AppendText(textToAdd);
@@ -2336,6 +2341,15 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         addRemoveWindow.ShowDialog();
     }
 
+    private void JoinLinesMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        JoinLinesWindow joinLinesWindow = new()
+        {
+            Owner = this
+        };
+        joinLinesWindow.ShowDialog();
+    }
+
     private void AlwaysOnTop_Checked(object sender, RoutedEventArgs e)
     {
         if (!IsLoaded)
@@ -2682,6 +2696,14 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         else
             textToModify = PassedTextControl.SelectedText;
         return textToModify;
+    }
+
+    internal IEnumerable<string> GetSelectedOrAllTextSegmentsForPreview()
+    {
+        if (editorMode == EtwEditorMode.Spreadsheet)
+            return GetSelectedOrPopulatedSpreadsheetCellTexts();
+
+        return [GetSelectedTextOrAllText()];
     }
 
     public bool IsSpreadsheetMode => editorMode == EtwEditorMode.Spreadsheet;
@@ -3958,6 +3980,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private void RemoveDuplicateLines_Click(object sender, RoutedEventArgs e)
     {
         PassedTextControl.Text = PassedTextControl.Text.RemoveDuplicateLines();
+    }
+
+    private void ShuffleLinesMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        ApplySelectedTextOrAllTextTransform(text => text.ShuffleLines());
     }
 
     private void ReplaceReservedCharsCmdCanExecute(object sender, CanExecuteRoutedEventArgs e)

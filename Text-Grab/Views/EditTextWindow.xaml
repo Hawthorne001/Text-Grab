@@ -68,6 +68,7 @@
                 Click="MoveLineDownMenuItem_Click"
                 Header="Move Selection Down"
                 InputGestureText="Alt + Down" />
+            <MenuItem Click="ShuffleLinesMenuItem_Click" Header="Shuffle Lines" />
         </ContextMenu>
         <ContextMenu x:Key="MarkdownContextMenu">
             <MenuItem Command="ApplicationCommands.Undo" />
@@ -260,6 +261,10 @@
                         Command="{x:Static local:EditTextWindow.SingleLineCmd}"
                         Header="Make _Single Line" />
                     <MenuItem
+                        x:Name="JoinLinesMenuItem"
+                        Click="JoinLinesMenuItem_Click"
+                        Header="_Join Lines..." />
+                    <MenuItem
                         x:Name="_TrimEachLineMenuItem"
                         Click="TrimEachLineMenuItem_Click"
                         Header="_Trim Each Line" />
@@ -284,6 +289,10 @@
                         x:Name="RemoveDuplicateLines"
                         Click="RemoveDuplicateLines_Click"
                         Header="Remove Duplicate Lines" />
+                    <MenuItem
+                        x:Name="ShuffleLinesMenuItem"
+                        Click="ShuffleLinesMenuItem_Click"
+                        Header="_Shuffle Lines" />
                     <MenuItem
                         x:Name="ReplaceReservedCharsMenuItem"
                         Command="{x:Static local:EditTextWindow.ReplaceReservedCmd}"
