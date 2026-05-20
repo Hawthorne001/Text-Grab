@@ -72,6 +72,31 @@ public class UnitConversionTests
         Assert.InRange(result.OutputNumbers[0], 18.9, 18.95);
     }
 
+    [Theory]
+    [InlineData("3.6 years to days", "days", 1314.9, 0.01)]
+    [InlineData("48 hours in days", "days", 2, 0.001)]
+    [InlineData("90 minutes to hours", "hours", 1.5, 0.001)]
+    public async Task DurationConversion_ExplicitSyntax_Works(string input, string expectedUnit, double expectedValue, double tolerance)
+    {
+        CalculationResult result = await _service.EvaluateExpressionsAsync(input);
+
+        Assert.Contains(expectedUnit, result.Output);
+        Assert.Single(result.OutputNumbers);
+        Assert.InRange(result.OutputNumbers[0], expectedValue - tolerance, expectedValue + tolerance);
+        Assert.Equal(0, result.ErrorCount);
+    }
+
+    [Fact]
+    public async Task DurationConversion_UsesFixedAverageMonthLength()
+    {
+        CalculationResult result = await _service.EvaluateExpressionsAsync("1 month to days");
+
+        Assert.Equal("30.44 days", result.Output);
+        Assert.Single(result.OutputNumbers);
+        Assert.Equal(30.44, result.OutputNumbers[0], 2);
+        Assert.Equal(0, result.ErrorCount);
+    }
+
     [Fact]
     public async Task ExplicitConversion_ZeroValue_Works()
     {

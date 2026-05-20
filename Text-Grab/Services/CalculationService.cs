@@ -74,12 +74,21 @@ public partial class CalculationService
 
             try
             {
-                if (TryEvaluateDateTimeMath(trimmedLine, out string dateTimeResult, out DateTime? parsedDateTime, previousDateTimeResult))
+                if (TryEvaluateDateTimeMath(trimmedLine, out string dateTimeResult, out DateTime? parsedDateTime, previousDateTimeResult, out double? numericDateTimeResult))
                 {
                     results.Add(dateTimeResult);
                     previousDateTimeResult = parsedDateTime;
-                    previousLineResult = null;
                     previousUnitResult = null;
+
+                    if (numericDateTimeResult.HasValue)
+                    {
+                        outputNumbers.Add(numericDateTimeResult.Value);
+                        previousLineResult = numericDateTimeResult.Value;
+                    }
+                    else
+                    {
+                        previousLineResult = null;
+                    }
                 }
                 else if (TryEvaluateUnitConversion(trimmedLine, out string unitResultStr, out UnitResult? newUnitResult, previousUnitResult))
                 {
