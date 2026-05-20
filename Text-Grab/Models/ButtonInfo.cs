@@ -646,7 +646,7 @@ public class ButtonInfo
         new()
         {
             OrderNumber = 7.1,
-            ButtonText = "Toggle Show Math Errors",
+            ButtonText = "Toggle Show Calc Errors",
             ClickEvent = "ToggleShowMathErrors_Click",
             SymbolIcon = SymbolRegular.MathSymbols24
         },

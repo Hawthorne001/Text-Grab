@@ -486,7 +486,7 @@
                     <MenuItem
                         x:Name="ShowErrorsMenuItem"
                         Click="ShowErrorsMenuItem_Click"
-                        Header="Show Math Errors"
+                        Header="Show Calc Errors"
                         IsCheckable="True" />
                     <MenuItem
                         x:Name="MarginsMenuItem"
@@ -764,12 +764,12 @@
                     AlternatingRowBackground="{DynamicResource ApplicationBackgroundBrush}"
                     AutoGenerateColumns="False"
                     Background="Transparent"
-                    ClipboardCopyMode="None"
                     BeginningEdit="SpreadsheetDataGrid_BeginningEdit"
                     CanUserAddRows="False"
                     CanUserSortColumns="False"
                     CellEditEnding="SpreadsheetDataGrid_CellEditEnding"
                     CellStyle="{DynamicResource DataGridCellStyleDark}"
+                    ClipboardCopyMode="None"
                     ColumnHeaderStyle="{DynamicResource DataGridColumnHeaderStyleDark}"
                     ContextMenu="{StaticResource SpreadsheetContextMenu}"
                     CurrentCellChanged="SpreadsheetDataGrid_CurrentCellChanged"
@@ -985,7 +985,10 @@
                             <Run Text="• Unit conversion: 5 miles to km, 100°F to celsius" />
                         </TextBlock>
                         <TextBlock Margin="0,0,0,4" TextWrapping="Wrap">
-                            <Run Text="• Supported units: length, mass, temperature, volume, speed, area" />
+                            <Run Text="• Date math: today + 5 days, 5-14-26 - 1-12-25 in weeks" />
+                        </TextBlock>
+                        <TextBlock Margin="0,0,0,4" TextWrapping="Wrap">
+                            <Run Text="• Supported units: length, mass, temperature, volume, speed, area, durations" />
                         </TextBlock>
                         <TextBlock
                             Margin="0,0,0,4"
@@ -1009,7 +1012,9 @@
                             TextWrapping="Wrap">
                             <Run Text="5 miles to km" /><LineBreak />
                             <Run Text="100 fahrenheit to celsius" /><LineBreak />
-                            <Run Text="3.5 gallons to liters" />
+                            <Run Text="3.5 gallons to liters" /><LineBreak />
+                            <Run Text="3.6 years to days" /><LineBreak />
+                            <Run Text="5-14-26 - 1-12-25 in weeks" />
                         </TextBlock>
                         <TextBlock
                             Margin="0,8,0,4"
