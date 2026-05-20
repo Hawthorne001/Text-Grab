@@ -222,6 +222,31 @@ REVENUES OVERY(UNDER) EXPENDITURES	$9,749	$0	$9,749	N/A";
         }
     }
 
+    [Theory]
+    [InlineData(true, true, false, true)]
+    [InlineData(true, true, true, false)]
+    [InlineData(true, false, false, false)]
+    [InlineData(false, true, false, false)]
+    public void ShouldUseParagraphDetection_RespectsTableMode(
+        bool paragraphDetectionEnabled,
+        bool isSpaceJoiningLanguage,
+        bool isTableMode,
+        bool expected)
+    {
+        bool originalParagraphDetection = AppUtilities.TextGrabSettings.ParagraphDetection;
+        AppUtilities.TextGrabSettings.ParagraphDetection = paragraphDetectionEnabled;
+
+        try
+        {
+            bool result = OcrUtilities.ShouldUseParagraphDetection(isSpaceJoiningLanguage, isTableMode);
+            Assert.Equal(expected, result);
+        }
+        finally
+        {
+            AppUtilities.TextGrabSettings.ParagraphDetection = originalParagraphDetection;
+        }
+    }
+
     [Fact]
     public void GroupWrappedParagraphLines_CombinesWrappedLinesIntoParagraphBlocks()
     {

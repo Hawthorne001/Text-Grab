@@ -376,7 +376,7 @@ public static partial class OcrUtilities
 
     public static async Task<List<OcrOutput>> GetTextFromWinAiAsync(Bitmap bitmap, WindowsAiLang language)
     {
-        if (DefaultSettings.ParagraphDetection && language.IsSpaceJoining())
+        if (ShouldUseParagraphDetection(language.IsSpaceJoining()))
         {
             WinAiOcrLinesWords? ocrResult = await WindowsAiUtilities.GetOcrResultAsync(bitmap);
             if (ocrResult is not null)
@@ -474,7 +474,7 @@ public static partial class OcrUtilities
         bool isSpaceJoiningOCRLang = language.IsSpaceJoining();
         IOcrLine[] lines = ocrResult.Lines;
 
-        if (DefaultSettings.ParagraphDetection && isSpaceJoiningOCRLang && lines.Length > 0)
+        if (ShouldUseParagraphDetection(isSpaceJoiningOCRLang) && lines.Length > 0)
         {
             List<GroupedOcrLines> groupedLines =
             [
@@ -500,6 +500,11 @@ public static partial class OcrUtilities
             text.ReverseWordsForRightToLeft();
 
         return text.ToString();
+    }
+
+    internal static bool ShouldUseParagraphDetection(bool isSpaceJoiningLanguage, bool isTableMode = false)
+    {
+        return DefaultSettings.ParagraphDetection && isSpaceJoiningLanguage && !isTableMode;
     }
 
     internal static List<GroupedOcrLines> GroupWrappedParagraphLines(IReadOnlyList<PositionedOcrLine> lines)

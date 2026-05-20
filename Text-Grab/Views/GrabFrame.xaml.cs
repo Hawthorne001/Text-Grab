@@ -1938,7 +1938,7 @@ public partial class GrabFrame : Window
             positionedLines.Add(new OcrUtilities.PositionedOcrLine(i, GetNormalizedOcrLineText(ocrLine), ocrLine.BoundingBox));
         }
 
-        if (!(DefaultSettings.ParagraphDetection && isSpaceJoining))
+        if (!IsParagraphDetectionActive())
         {
             return
             [
@@ -4090,10 +4090,18 @@ new GrabFrameOperationArgs()
         return patterns.Length == 0 ? StoredRegex.GetDefaultPatterns() : patterns;
     }
 
-    private void TableToggleButton_Click(object? sender = null, RoutedEventArgs? e = null)
+    private async void TableToggleButton_Click(object? sender = null, RoutedEventArgs? e = null)
     {
         CancelTablePlacement();
         RemoveTableLines();
+
+        if (ShouldRefreshOcrBordersForTableModeActivation())
+        {
+            await DrawRectanglesAroundWords(SearchBox.Text);
+            UpdateFrameText();
+            return;
+        }
+
         UpdateFrameText();
     }
 
@@ -4430,8 +4438,7 @@ new GrabFrameOperationArgs()
             (double Top, double Left, double Height, string Text, bool AllowParagraphJoin) currentLine = orderedLines[i];
 
             bool shouldJoinParagraph =
-                DefaultSettings.ParagraphDetection
-                && isSpaceJoining
+                IsParagraphDetectionActive()
                 && previousLine.AllowParagraphJoin
                 && currentLine.AllowParagraphJoin
                 && OcrUtilities.IsWrappedParagraph(previousLine.Top, previousLine.Height, currentLine.Top, currentLine.Height);
@@ -4501,14 +4508,29 @@ new GrabFrameOperationArgs()
         {
             WordBorder prev = sorted[i - 1];
             WordBorder curr = sorted[i];
-            if (DefaultSettings.ParagraphDetection
-                && isSpaceJoining
+            if (IsParagraphDetectionActive()
                 && OcrUtilities.IsWrappedParagraph(prev.Top, prev.Height, curr.Top, curr.Height))
                 sb.Append(' ');
             else
                 sb.AppendLine();
             sb.Append(curr.Word);
         }
+    }
+
+    private bool IsParagraphDetectionActive()
+    {
+        return OcrUtilities.ShouldUseParagraphDetection(isSpaceJoining, TableToggleButton.IsChecked is true);
+    }
+
+    private bool ShouldRefreshOcrBordersForTableModeActivation()
+    {
+        return TableToggleButton.IsChecked is true
+            && CurrentLanguage is not null
+            && CurrentLanguage is not UiAutomationLang
+            && CurrentLanguage.IsSpaceJoining()
+            && DefaultSettings.ParagraphDetection
+            && _currentPdfPageContent?.HasNativeText is not true
+            && wordBorders.Any(wb => wb.KeepSingleLineOutput);
     }
 
     private void Window_Closed(object? sender, EventArgs e)
