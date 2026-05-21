@@ -21,7 +21,8 @@
       "Bash(pdm api *)",
       "Bash(bin/pdm *)",
       "Bash(Get-ChildItem -Path \"D:/source/TheJoeFin/Text-Grab/Text-Grab/\" -Directory)",
-      "Bash(Select-Object Name)"
+      "Bash(Select-Object Name)",
+      "PowerShell(dotnet build *)"
     ],
     "deny": []
   }
