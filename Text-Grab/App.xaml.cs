@@ -34,6 +34,8 @@ public partial class App : System.Windows.Application
     #region Fields
 
     private static readonly Settings _defaultSettings = AppUtilities.TextGrabSettings;
+    private static RegistryMonitor? _themeRegistryMonitor;
+    private static RegistryKey? _themeRegistryKey;
 
     #endregion Fields
 
@@ -208,13 +210,33 @@ public partial class App : System.Windows.Application
 
     public static void WatchTheme()
     {
-        if (Registry.CurrentUser.OpenSubKey(SystemThemeUtility.themeKeyPath) is not RegistryKey key)
-            return;
+        StopWatchingTheme();
 
-        RegistryMonitor monitor = new(key);
-        monitor.RegChanged += new EventHandler(SetTheme);
-        monitor.Start();
+        if (Registry.CurrentUser.OpenSubKey(SystemThemeUtility.themeKeyPath) is not RegistryKey key)
+        {
+            SetTheme();
+            return;
+        }
+
+        _themeRegistryKey = key;
+        _themeRegistryMonitor = new RegistryMonitor(key);
+        _themeRegistryMonitor.RegChanged += new EventHandler(SetTheme);
+        _themeRegistryMonitor.Start();
         SetTheme();
+    }
+
+    private static void StopWatchingTheme()
+    {
+        if (_themeRegistryMonitor is not null)
+        {
+            _themeRegistryMonitor.RegChanged -= new EventHandler(SetTheme);
+            try { _themeRegistryMonitor.Dispose(); }
+            catch (ObjectDisposedException) { }
+            _themeRegistryMonitor = null;
+        }
+
+        _themeRegistryKey?.Dispose();
+        _themeRegistryKey = null;
     }
 
     private static async Task<bool> CheckForOcringFolder(string currentArgument)
@@ -393,7 +415,15 @@ public partial class App : System.Windows.Application
     private void appExit(object sender, ExitEventArgs e)
     {
         TextGrabIcon?.Close();
-        Singleton<HistoryService>.Instance.WriteHistory();
+
+        NotifyIconUtilities.UnregisterHotkeys(this);
+        HotKeyIds.Clear();
+
+        StopWatchingTheme();
+
+        HistoryService historyService = Singleton<HistoryService>.Instance;
+        historyService.WriteHistory();
+        historyService.Dispose();
     }
 
     private async void appStartup(object sender, StartupEventArgs e)

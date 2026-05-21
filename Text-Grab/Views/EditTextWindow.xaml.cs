@@ -3287,7 +3287,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         List<HistoryInfo> grabsHistories = Singleton<HistoryService>.Instance.GetEditWindows();
         grabsHistories = [.. grabsHistories.OrderByDescending(x => x.CaptureDateTime)];
 
-        OpenRecentMenuItem.Items.Clear();
+        ClearRecentTextMenuItems();
 
         if (grabsHistories.Count < 1)
         {
@@ -3295,33 +3295,12 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
 
+        OpenRecentMenuItem.IsEnabled = true;
+
         foreach (HistoryInfo history in grabsHistories)
         {
-            MenuItem menuItem = new();
-            string historyId = history.ID;
-            menuItem.Click += (sender, args) =>
-            {
-                HistoryInfo? selectedHistory = Singleton<HistoryService>.Instance.GetTextHistoryById(historyId);
-
-                if (selectedHistory is null)
-                {
-                    menuItem.IsEnabled = false;
-                    return;
-                }
-
-                if (string.IsNullOrWhiteSpace(PassedTextControl.Text))
-                {
-                    ResetSpreadsheetUndoHistory();
-                    PassedTextControl.Text = selectedHistory.TextContent;
-                    tableDocument = EditTextTableDocument.TryDeserialize(selectedHistory.EditTextTableDocumentJson);
-                    editorMode = selectedHistory.EditorMode;
-                    SetEditorMode(editorMode);
-                    return;
-                }
-
-                EditTextWindow etw = new(selectedHistory);
-                etw.Show();
-            };
+            MenuItem menuItem = new() { Tag = history.ID };
+            menuItem.Click += RecentTextHistoryMenuItem_Click;
 
             if (PassedTextControl.Text == history.TextContent)
                 menuItem.IsEnabled = false;
@@ -3339,6 +3318,71 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             };
             OpenRecentMenuItem.Items.Add(menuItem);
         }
+    }
+
+    private void RecentTextHistoryMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem || menuItem.Tag is not string historyId)
+            return;
+
+        HistoryInfo? selectedHistory = Singleton<HistoryService>.Instance.GetTextHistoryById(historyId);
+
+        if (selectedHistory is null)
+        {
+            menuItem.IsEnabled = false;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(PassedTextControl.Text))
+        {
+            ResetSpreadsheetUndoHistory();
+            PassedTextControl.Text = selectedHistory.TextContent;
+            tableDocument = EditTextTableDocument.TryDeserialize(selectedHistory.EditTextTableDocumentJson);
+            editorMode = selectedHistory.EditorMode;
+            SetEditorMode(editorMode);
+            return;
+        }
+
+        EditTextWindow etw = new(selectedHistory);
+        etw.Show();
+    }
+
+    private void ClearRecentTextMenuItems()
+    {
+        foreach (object item in OpenRecentMenuItem.Items)
+        {
+            if (item is MenuItem oldItem)
+                oldItem.Click -= RecentTextHistoryMenuItem_Click;
+        }
+        OpenRecentMenuItem.Items.Clear();
+    }
+
+    private void ClearLanguageMenuItems()
+    {
+        foreach (object item in LanguageMenuItem.Items)
+        {
+            if (item is MenuItem oldItem)
+                oldItem.Click -= LanguageMenuItem_Click;
+        }
+        LanguageMenuItem.Items.Clear();
+    }
+
+    private void ClearGrabTemplateMenuItems()
+    {
+        foreach (object item in GrabTemplateMenuItem.Items)
+        {
+            if (item is MenuItem oldItem)
+                oldItem.Click -= GrabTemplateMenuItem_Click;
+        }
+        GrabTemplateMenuItem.Items.Clear();
+    }
+
+    private void ClearDynamicMenuItems()
+    {
+        ClearRecentTextMenuItems();
+        ClearLanguageMenuItems();
+        ClearGrabTemplateMenuItems();
+        Singleton<HistoryService>.Instance.ClearRecentGrabsMenuItems(OpenRecentGrabsMenuItem);
     }
 
     private void MakeQrCodeCanExecute(object sender, CanExecuteRoutedEventArgs e)
@@ -5106,6 +5150,19 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         System.Windows.DataObject.RemovePastingHandler(MarkdownEditorControl, MarkdownEditorControl_Pasting);
 
         windowSource?.RemoveHook(EditTextWindowMessageHook);
+
+        EscapeKeyTimer.Stop();
+        EscapeKeyTimer.Tick -= EscapeKeyTimer_Tick;
+
+        MarkdownEditorControl.RemoveHandler(Hyperlink.RequestNavigateEvent, new RequestNavigateEventHandler(MarkdownEditorControl_RequestNavigate));
+        PassedTextControl.RemoveHandler(ScrollViewer.ScrollChangedEvent, new ScrollChangedEventHandler(PassedTextControl_ScrollChanged));
+        CalcResultsTextControl.PreviewMouseWheel -= CalcResultsTextControl_PreviewMouseWheel;
+
+        HideCalcPaneContextItem.Click -= HideCalcPaneContextItem_Click;
+        ShowCalcErrorsContextItem.Click -= ShowCalcErrorsContextItem_Click;
+        CopyAllContextItem.Click -= CopyAllContextItem_Click;
+
+        ClearDynamicMenuItems();
 
         string windowSizeAndPosition = $"{this.Left},{this.Top},{this.Width},{this.Height}";
         DefaultSettings.EditTextWindowSizeAndPosition = windowSizeAndPosition;

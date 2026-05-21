@@ -105,6 +105,8 @@ public partial class GrabFrame : Window
     private bool isLoadedVisualDocument = false;
     private double frozenFrameContentScale = 1;
     private const string TargetLanguageMenuHeader = "Target Language";
+    private WindowResizer? windowResizer;
+    private bool _isCleanedUp;
 
     #endregion Fields
 
@@ -533,7 +535,7 @@ public partial class GrabFrame : Window
 
         SetRestoreState();
 
-        WindowResizer resizer = new(this);
+        windowResizer = new WindowResizer(this);
         reDrawTimer.Interval = new(0, 0, 0, 0, 500);
         reDrawTimer.Tick += ReDrawTimer_Tick;
 
@@ -1332,6 +1334,15 @@ public partial class GrabFrame : Window
 
     public void GrabFrame_Unloaded(object sender, RoutedEventArgs e)
     {
+        CleanupGrabFrame();
+    }
+
+    private void CleanupGrabFrame()
+    {
+        if (_isCleanedUp)
+            return;
+        _isCleanedUp = true;
+
         MainZoomBorder.ResetRequested -= MainZoomBorder_ResetRequested;
         Activated -= GrabFrameWindow_Activated;
         Closed -= Window_Closed;
@@ -1348,6 +1359,9 @@ public partial class GrabFrame : Window
 
         reDrawTimer.Stop();
         reDrawTimer.Tick -= ReDrawTimer_Tick;
+
+        reSearchTimer.Stop();
+        reSearchTimer.Tick -= ReSearchTimer_Tick;
 
         frameMessageTimer.Stop();
         frameMessageTimer.Tick -= FrameMessageTimer_Tick;
@@ -1384,6 +1398,30 @@ public partial class GrabFrame : Window
         EditToggleButton.Click -= EditToggleButton_Click;
         SettingsBTN.Click -= SettingsBTN_Click;
         EditTextToggleButton.Click -= EditTextBTN_Click;
+
+        windowResizer?.Dispose();
+        windowResizer = null;
+
+        foreach (WordBorder wb in wordBorders)
+            wb.OwnerGrabFrame = null;
+        wordBorders.Clear();
+
+        _loadedPdfDocument?.Dispose();
+        _loadedPdfDocument = null;
+        _currentPdfPageContent = null;
+
+        frameContentImageSource = null;
+        GrabFrameImage.Source = null;
+        ocrResultOfWindow = null;
+        frozenUiAutomationSnapshot = null;
+        liveUiAutomationSnapshot = null;
+        AnalyzedResultTable = null;
+        destinationTextBox = null;
+        historyItem = null;
+        movingWordBordersDictionary.Clear();
+        originalTexts.Clear();
+        pdfTextLineOverlays.Clear();
+        RectanglesCanvas.Children.Clear();
     }
 
     public void MergeSelectedWordBorders()
@@ -4536,6 +4574,7 @@ new GrabFrameOperationArgs()
     private void Window_Closed(object? sender, EventArgs e)
     {
         SetGrabFrameUserSettings();
+        CleanupGrabFrame();
         WindowUtilities.ShouldShutDown();
     }
 
