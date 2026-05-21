@@ -230,6 +230,14 @@ public class ButtonInfo
         },
         new()
         {
+            OrderNumber = 1.31,
+            ButtonText = "Join Lines...",
+            SymbolText = "",
+            ClickEvent = "JoinLinesMenuItem_Click",
+            SymbolIcon = SymbolRegular.Merge24
+        },
+        new()
+        {
             OrderNumber = 1.4,
             ButtonText = "New Fullscreen Grab",
             SymbolText = "",
@@ -355,6 +363,14 @@ public class ButtonInfo
             SymbolText = "",
             ClickEvent = "RemoveDuplicateLines_Click",
             SymbolIcon = SymbolRegular.MultiselectLtr24
+        },
+        new()
+        {
+            OrderNumber = 3.51,
+            ButtonText = "Shuffle Lines",
+            SymbolText = "",
+            ClickEvent = "ShuffleLinesMenuItem_Click",
+            SymbolIcon = SymbolRegular.ArrowShuffle24
         },
         new()
         {
