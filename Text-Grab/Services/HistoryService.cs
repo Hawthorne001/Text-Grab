@@ -20,7 +20,7 @@ using SymbolRegular = Wpf.Ui.Controls.SymbolRegular;
 
 namespace Text_Grab.Services;
 
-public class HistoryService
+public partial class HistoryService : IDisposable
 {
     #region Fields
 
@@ -43,6 +43,7 @@ public class HistoryService
     private bool _textHistoryLoaded;
     private bool _imageHistoryLoaded;
     private bool _hasPendingWrite;
+    private bool _disposed;
     private DateTimeOffset _lastHistoryAccessUtc = DateTimeOffset.MinValue;
     #endregion Fields
 
@@ -70,9 +71,13 @@ public class HistoryService
 
     public void CacheLastBitmap(Bitmap bmp)
     {
+        // Acquire the HBITMAP first so a failure here doesn't leave CachedBitmap
+        // pointing at a bitmap whose handle we never recorded.
+        nint newHandle = bmp.GetHbitmap();
+
         DisposeCachedBitmap();
         CachedBitmap = bmp;
-        _cachedBitmapHandle = bmp.GetHbitmap();
+        _cachedBitmapHandle = newHandle;
     }
 
     public void DeleteHistory()
@@ -179,13 +184,15 @@ public class HistoryService
         List<HistoryInfo> grabsHistory = GetRecentGrabs();
         grabsHistory = [.. grabsHistory.OrderByDescending(x => x.CaptureDateTime)];
 
-        recentGrabsMenuItem.Items.Clear();
+        ClearRecentGrabsMenuItems(recentGrabsMenuItem);
 
         if (grabsHistory.Count < 1)
         {
             recentGrabsMenuItem.IsEnabled = false;
             return;
         }
+
+        recentGrabsMenuItem.IsEnabled = true;
 
         string historyBasePath = await FileUtilities.GetPathToHistory();
 
@@ -195,22 +202,8 @@ public class HistoryService
             if (string.IsNullOrWhiteSpace(history.ImagePath) || !File.Exists(imageFullPath))
                 continue;
 
-            MenuItem menuItem = new();
-            string historyId = history.ID;
-            menuItem.Click += (object sender, RoutedEventArgs args) =>
-            {
-                HistoryInfo? selectedHistory = GetImageHistoryById(historyId);
-
-                if (selectedHistory is null)
-                {
-                    menuItem.IsEnabled = false;
-                    return;
-                }
-
-                GrabFrame grabFrame = new(selectedHistory);
-                try { grabFrame.Show(); }
-                catch { menuItem.IsEnabled = false; }
-            };
+            MenuItem menuItem = new() { Tag = history.ID };
+            menuItem.Click += RecentGrabMenuItem_Click;
 
             string snippet = history.TextContent.Trim().Replace("\t", " ").MakeStringSingleLine().Truncate(40);
             menuItem.Header = $"{history.CaptureDateTime.Humanize().Trim()} | {snippet}";
@@ -225,6 +218,33 @@ public class HistoryService
             };
             recentGrabsMenuItem.Items.Add(menuItem);
         }
+    }
+
+    public void ClearRecentGrabsMenuItems(MenuItem recentGrabsMenuItem)
+    {
+        foreach (object item in recentGrabsMenuItem.Items)
+        {
+            if (item is MenuItem oldItem)
+                oldItem.Click -= RecentGrabMenuItem_Click;
+        }
+        recentGrabsMenuItem.Items.Clear();
+    }
+
+    private void RecentGrabMenuItem_Click(object sender, RoutedEventArgs args)
+    {
+        if (sender is not MenuItem menuItem || menuItem.Tag is not string historyId)
+            return;
+
+        HistoryInfo? selectedHistory = GetImageHistoryById(historyId);
+        if (selectedHistory is null)
+        {
+            menuItem.IsEnabled = false;
+            return;
+        }
+
+        GrabFrame grabFrame = new(selectedHistory);
+        try { grabFrame.Show(); }
+        catch { menuItem.IsEnabled = false; }
     }
 
     public void SaveToHistory(GrabFrame grabFrameToSave)
@@ -452,6 +472,28 @@ public class HistoryService
             WriteHistory();
 
         ReleaseLoadedHistoriesCore();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
+        saveTimer.Stop();
+        saveTimer.Tick -= SaveTimer_Tick;
+
+        historyCacheReleaseTimer.Stop();
+        historyCacheReleaseTimer.Tick -= HistoryCacheReleaseTimer_Tick;
+
+        if (_hasPendingWrite)
+            WriteHistory();
+
+        DisposeCachedBitmap();
+        ReleaseLoadedHistoriesCore();
+
+        GC.SuppressFinalize(this);
     }
 
     #endregion Public Methods
