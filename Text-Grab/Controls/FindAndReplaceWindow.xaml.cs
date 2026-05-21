@@ -4,7 +4,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
@@ -12,7 +11,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Text_Grab.Models;
-using Text_Grab.Properties;
 using Text_Grab.Utilities;
 using Wpf.Ui.Controls;
 
@@ -74,6 +72,8 @@ public partial class FindAndReplaceWindow : FluentWindow
         get => textEditWindow;
         set
         {
+            textEditWindow?.PassedTextControl.TextChanged -= EditTextBoxChanged;
+
             textEditWindow = value;
 
             textEditWindow?.PassedTextControl.TextChanged += EditTextBoxChanged;

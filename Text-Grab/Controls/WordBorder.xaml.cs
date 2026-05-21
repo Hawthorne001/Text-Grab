@@ -49,7 +49,7 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
     public static RoutedCommand MergeWordsCommand = new();
     private int contextMenuBaseSize;
     private SolidColorBrush contrastingForeground = new(Colors.White);
-    private DispatcherTimer debounceTimer = new();
+    private readonly DispatcherTimer debounceTimer = new();
     private bool isSyncingTextProperties;
     private double left = 0;
     private SolidColorBrush matchingBackground = new(Colors.Black);
@@ -407,16 +407,12 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
                 translateMenuItem.Header = $"Translate to {systemLanguage}";
             }
 
-            if (translateSeparator != null)
-                translateSeparator.Visibility = Visibility.Visible;
+            translateSeparator?.Visibility = Visibility.Visible;
         }
         else
         {
-            if (translateMenuItem != null)
-                translateMenuItem.Visibility = Visibility.Collapsed;
-
-            if (translateSeparator != null)
-                translateSeparator.Visibility = Visibility.Collapsed;
+            translateMenuItem?.Visibility = Visibility.Collapsed;
+            translateSeparator?.Visibility = Visibility.Collapsed;
         }
 
         if (Uri.TryCreate(Word, UriKind.Absolute, out Uri? uri))
@@ -426,8 +422,10 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
             if (headerText.Length > maxLength)
                 headerText = string.Concat(headerText.AsSpan(0, maxLength), "...");
 
-            MenuItem urlMi = new();
-            urlMi.Header = headerText;
+            MenuItem urlMi = new()
+            {
+                Header = headerText
+            };
             urlMi.Click += (sender, e) =>
             {
                 Process.Start(new ProcessStartInfo(Word) { UseShellExecute = true });
@@ -567,72 +565,74 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
         this.Unloaded -= WordBorderControl_Unloaded;
         Loaded -= WordBorder_Loaded;
         SizeChanged -= WordBorder_SizeChanged;
+
+        debounceTimer.Stop();
+        debounceTimer.Tick -= DebounceTimer_Tick;
+
+        OwnerGrabFrame = null;
     }
 
     private void WordBorder_Loaded(object sender, RoutedEventArgs e) => ApplyTextLayout();
 
     private void WordBorder_SizeChanged(object sender, SizeChangedEventArgs e) => ApplyTextLayout();
 
-        private async void TranslateWordMenuItem_Click(object sender, RoutedEventArgs e)
+    private async void TranslateWordMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(Word))
+            return;
+
+        if (!WindowsAiUtilities.CanDeviceUseWinAI())
         {
-            if (string.IsNullOrWhiteSpace(Word))
-                return;
-
-            if (!WindowsAiUtilities.CanDeviceUseWinAI())
+            await new Wpf.Ui.Controls.MessageBox
             {
-                await new Wpf.Ui.Controls.MessageBox
-                {
-                    Title = "Translation Not Available",
-                    Content = "Windows AI is not available on this device.",
-                    CloseButtonText = "OK"
-                }.ShowDialogAsync();
-                return;
-            }
-
-            // Store original text
-            string originalWord = Word;
-
-            try
-            {
-                // Get system language
-                string targetLanguage = GetSystemLanguageName();
-
-                // Translate the word
-                string translatedText = await WindowsAiUtilities.TranslateText(originalWord, targetLanguage);
-
-                // Update the word with translation
-                if (!string.IsNullOrWhiteSpace(translatedText) && translatedText != originalWord)
-                {
-                    // Notify the owner GrabFrame of the change for undo support
-                    if (OwnerGrabFrame != null)
-                    {
-                        OwnerGrabFrame.UndoableWordChange(this, originalWord, true);
-                    }
-
-                    Word = translatedText;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Translation failed: {ex.Message}");
-                await new Wpf.Ui.Controls.MessageBox
-                {
-                    Title = "Translation Error",
-                    Content = $"Translation failed: {ex.Message}",
-                    CloseButtonText = "OK"
-                }.ShowDialogAsync();
-            }
+                Title = "Translation Not Available",
+                Content = "Windows AI is not available on this device.",
+                CloseButtonText = "OK"
+            }.ShowDialogAsync();
+            return;
         }
 
-        /// <summary>
-        /// Gets the system's display language name (e.g., "English", "Spanish", "French")
-        /// Falls back to "English" if the system language is not recognized.
-        /// </summary>
-        private static string GetSystemLanguageName()
-        {
-            // Use the shared utility method from LanguageUtilities
-            return LanguageUtilities.GetSystemLanguageForTranslation();
-        }
+        // Store original text
+        string originalWord = Word;
 
-        #endregion Methods
+        try
+        {
+            // Get system language
+            string targetLanguage = GetSystemLanguageName();
+
+            // Translate the word
+            string translatedText = await WindowsAiUtilities.TranslateText(originalWord, targetLanguage);
+
+            // Update the word with translation
+            if (!string.IsNullOrWhiteSpace(translatedText) && translatedText != originalWord)
+            {
+                // Notify the owner GrabFrame of the change for undo support
+                OwnerGrabFrame?.UndoableWordChange(this, originalWord, true);
+
+                Word = translatedText;
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Translation failed: {ex.Message}");
+            await new Wpf.Ui.Controls.MessageBox
+            {
+                Title = "Translation Error",
+                Content = $"Translation failed: {ex.Message}",
+                CloseButtonText = "OK"
+            }.ShowDialogAsync();
+        }
     }
+
+    /// <summary>
+    /// Gets the system's display language name (e.g., "English", "Spanish", "French")
+    /// Falls back to "English" if the system language is not recognized.
+    /// </summary>
+    private static string GetSystemLanguageName()
+    {
+        // Use the shared utility method from LanguageUtilities
+        return LanguageUtilities.GetSystemLanguageForTranslation();
+    }
+
+    #endregion Methods
+}
