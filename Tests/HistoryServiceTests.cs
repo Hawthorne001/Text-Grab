@@ -218,6 +218,69 @@ public class HistoryServiceTests
     }
 
     [WpfFact]
+    public async Task TextHistory_LoadsUnknownLanguageKindsUsingGlobalFallback()
+    {
+        const string rawHistoryJson =
+            """
+            [
+              {
+                "ID": "legacy-language-kind",
+                "CaptureDateTime": "2024-01-06T12:00:00+00:00",
+                "TextContent": "legacy text history",
+                "SourceMode": "EditText",
+                "LanguageTag": "en-US",
+                "LanguageKind": "LegacyPreview"
+              }
+            ]
+            """;
+
+        await FileUtilities.SaveTextFile(rawHistoryJson, "HistoryTextOnly.json", FileStorageKind.WithHistory);
+
+        HistoryService historyService = new();
+        HistoryInfo historyItem = Assert.Single(historyService.GetEditWindows());
+
+        Assert.Equal("legacy text history", historyItem.TextContent);
+        Assert.Equal(LanguageKind.Global, historyItem.LanguageKind);
+
+        historyService.WriteHistory();
+        historyService.ReleaseLoadedHistories();
+
+        string savedHistoryJson = await FileUtilities.GetTextFileAsync("HistoryTextOnly.json", FileStorageKind.WithHistory);
+        Assert.DoesNotContain("LegacyPreview", savedHistoryJson);
+        Assert.Contains("\"LanguageKind\": \"Global\"", savedHistoryJson);
+    }
+
+    [WpfFact]
+    public async Task TextHistory_RecoversValidEntriesWhenOneEntryIsMalformed()
+    {
+        const string rawHistoryJson =
+            """
+            [
+              {
+                "ID": "valid-entry",
+                "CaptureDateTime": "2024-01-07T12:00:00+00:00",
+                "TextContent": "valid text history",
+                "SourceMode": "EditText"
+              },
+              {
+                "ID": "bad-entry",
+                "CaptureDateTime": "2024-01-08T12:00:00+00:00",
+                "TextContent": "bad text history",
+                "SourceMode": { "unexpected": true }
+              }
+            ]
+            """;
+
+        await FileUtilities.SaveTextFile(rawHistoryJson, "HistoryTextOnly.json", FileStorageKind.WithHistory);
+
+        HistoryService historyService = new();
+        HistoryInfo historyItem = Assert.Single(historyService.GetEditWindows());
+
+        Assert.Equal("valid-entry", historyItem.ID);
+        Assert.Equal("valid text history", historyItem.TextContent);
+    }
+
+    [WpfFact]
     public void TextHistory_WriteHistory_PersistsSavedEditWindowText()
     {
         bool originalUseHistory = AppUtilities.TextGrabSettings.UseHistory;

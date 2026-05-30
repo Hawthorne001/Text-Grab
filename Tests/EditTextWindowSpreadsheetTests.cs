@@ -119,6 +119,82 @@ public class EditTextWindowSpreadsheetTests
     }
 
     [Fact]
+    public void ExtractSpreadsheetSelectionNumbers_PullsNumericValuesFromSelectedCells()
+    {
+        DataTable dataTable = new();
+        dataTable.Columns.Add("A", typeof(string));
+        dataTable.Columns.Add("B", typeof(string));
+        dataTable.Columns.Add("C", typeof(string));
+        dataTable.Rows.Add("10", "$20.50", "n/a");
+        dataTable.Rows.Add("1,234", "Total: 3,5", "abc");
+
+        List<double> numbers = EditTextWindow.ExtractSpreadsheetSelectionNumbers(
+            dataTable,
+            [
+                (0, 0),
+                (0, 1),
+                (1, 0),
+                (1, 1),
+                (1, 1),
+                (-1, 0),
+                (5, 5)
+            ]);
+
+        Assert.Equal([10d, 20.5d, 1234d, 3.5d], numbers);
+    }
+
+    [Fact]
+    public void ExtractSpreadsheetSelectionNumbers_IgnoresNonNumericSelectedCells()
+    {
+        DataTable dataTable = new();
+        dataTable.Columns.Add("A", typeof(string));
+        dataTable.Columns.Add("B", typeof(string));
+        dataTable.Rows.Add("hello", string.Empty);
+
+        List<double> numbers = EditTextWindow.ExtractSpreadsheetSelectionNumbers(
+            dataTable,
+            [
+                (0, 0),
+                (0, 1)
+            ]);
+
+        Assert.Empty(numbers);
+    }
+
+    [Fact]
+    public void BuildSpreadsheetSelectionNumbersPreviewText_FormatsExtractedNumbersForCalcPane()
+    {
+        DataTable dataTable = new();
+        dataTable.Columns.Add("A", typeof(string));
+        dataTable.Columns.Add("B", typeof(string));
+        dataTable.Rows.Add("200", "17");
+        dataTable.Rows.Add("7", "Total: 1");
+
+        string previewText = EditTextWindow.BuildSpreadsheetSelectionNumbersPreviewText(
+            dataTable,
+            [
+                (0, 0),
+                (0, 1),
+                (1, 0),
+                (1, 1)
+            ]);
+
+        Assert.Equal("200" + Environment.NewLine + "17" + Environment.NewLine + "7" + Environment.NewLine + "1", previewText);
+    }
+
+    [Theory]
+    [InlineData(1, false, true)]
+    [InlineData(3, false, true)]
+    [InlineData(0, false, false)]
+    [InlineData(1, true, false)]
+    public void ShouldHandleSpreadsheetDeleteKey_RequiresSelectionAndNoInlineEditor(int selectedCellCount, bool isCellEditorFocused, bool expected)
+    {
+        bool shouldHandle = EditTextWindow.ShouldHandleSpreadsheetDeleteKey(selectedCellCount, isCellEditorFocused);
+
+        Assert.Equal(expected, shouldHandle);
+    }
+
+    [Fact]
     public void GetSelectedOrPopulatedSpreadsheetCellCoordinates_PrefersValidSelection()
     {
         DataTable dataTable = new();
