@@ -2788,7 +2788,7 @@ public partial class GrabFrame : Window
         FrameText = "";
         wordBorders.Clear();
         pdfTextLineOverlays.Clear();
-        UpdateFrameText();
+        UpdateFrameText(preserveLinkedSpreadsheetSelection: true);
     }
 
     private void GrabFrameWindow_Deactivated(object? sender, EventArgs e)
@@ -4495,7 +4495,30 @@ new GrabFrameOperationArgs()
         }
     }
 
-    private void UpdateFrameText()
+    internal static bool ShouldUpdateLinkedDestinationText(
+        bool isFromEditWindow,
+        bool hasDestinationTextBox,
+        bool shouldAlwaysUpdateEtw,
+        bool isEditTextToggleEnabled,
+        bool hasActiveGrabTemplate,
+        bool preserveLinkedSpreadsheetSelection,
+        bool isDestinationSpreadsheetMode)
+    {
+        return isFromEditWindow
+            && hasDestinationTextBox
+            && shouldAlwaysUpdateEtw
+            && isEditTextToggleEnabled
+            && !hasActiveGrabTemplate
+            && !(preserveLinkedSpreadsheetSelection && isDestinationSpreadsheetMode);
+    }
+
+    private bool IsLinkedEditTextWindowInSpreadsheetMode()
+    {
+        return destinationTextBox is not null
+            && Window.GetWindow(destinationTextBox) is EditTextWindow { IsSpreadsheetMode: true };
+    }
+
+    private void UpdateFrameText(bool preserveLinkedSpreadsheetSelection = false)
     {
         StringBuilder stringBuilder = new();
         List<(double Top, double Left, double Height, string Text, bool AllowParagraphJoin)> selectedLines =
@@ -4527,11 +4550,15 @@ new GrabFrameOperationArgs()
 
         FrameText = stringBuilder.ToString();
 
-        if (IsFromEditWindow
-            && destinationTextBox is not null
-            && AlwaysUpdateEtwCheckBox.IsChecked is true
-            && EditTextToggleButton.IsChecked is true
-            && _activeGrabTemplate is null)
+        if (destinationTextBox is not null
+            && ShouldUpdateLinkedDestinationText(
+                IsFromEditWindow,
+                hasDestinationTextBox: true,
+                AlwaysUpdateEtwCheckBox.IsChecked is true,
+                EditTextToggleButton.IsChecked is true,
+                _activeGrabTemplate is not null,
+                preserveLinkedSpreadsheetSelection,
+                IsLinkedEditTextWindowInSpreadsheetMode()))
         {
             destinationTextBox.SelectedText = FrameText;
         }

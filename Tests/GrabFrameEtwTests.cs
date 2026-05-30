@@ -1,4 +1,5 @@
 using Text_Grab.Utilities;
+using Text_Grab.Views;
 
 namespace Tests;
 
@@ -19,5 +20,33 @@ public class GrabFrameEtwTests
             hasExistingEditTextWindow);
 
         Assert.Equal(expected, shouldUseSpreadsheetMode);
+    }
+
+    [Theory]
+    [InlineData(true, true, true, true, false, false, false, true)]
+    [InlineData(true, true, true, true, false, true, false, true)]
+    [InlineData(true, true, true, true, false, true, true, false)]
+    [InlineData(true, true, true, true, true, false, false, false)]
+    [InlineData(true, true, false, true, false, false, false, false)]
+    public void ShouldUpdateLinkedDestinationText_PreservesSpreadsheetSelectionWhenClosing(
+        bool isFromEditWindow,
+        bool hasDestinationTextBox,
+        bool shouldAlwaysUpdateEtw,
+        bool isEditTextToggleEnabled,
+        bool hasActiveGrabTemplate,
+        bool preserveLinkedSpreadsheetSelection,
+        bool isDestinationSpreadsheetMode,
+        bool expected)
+    {
+        bool shouldUpdate = GrabFrame.ShouldUpdateLinkedDestinationText(
+            isFromEditWindow,
+            hasDestinationTextBox,
+            shouldAlwaysUpdateEtw,
+            isEditTextToggleEnabled,
+            hasActiveGrabTemplate,
+            preserveLinkedSpreadsheetSelection,
+            isDestinationSpreadsheetMode);
+
+        Assert.Equal(expected, shouldUpdate);
     }
 }
