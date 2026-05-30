@@ -1112,8 +1112,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (e.Key == Key.Delete)
         {
-            bool hasMultipleSelectedCells = SpreadsheetDataGrid.SelectedCells.Count > 1;
-            if (!hasMultipleSelectedCells)
+            if (!ShouldHandleSpreadsheetDeleteKey(SpreadsheetDataGrid.SelectedCells.Count, IsSpreadsheetCellEditorFocused()))
                 return;
 
             e.Handled = true;
@@ -1221,23 +1220,20 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         UpdateSelectedSpreadsheetCellCoordinates();
 
         if (editorMode == EtwEditorMode.Spreadsheet)
+        {
             UpdateLineAndColumnText();
+
+            if (CalcResultsTextControl.Visibility == Visibility.Visible)
+            {
+                UpdateCalcPaneTextDisplay();
+                UpdateAggregateStatusDisplay();
+            }
+        }
     }
 
     private void ClearSelectedSpreadsheetCellValues()
     {
-        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = GetSelectedSpreadsheetCellCoordinates();
-
-        if (selectedCellCoordinates.Count == 0)
-            return;
-
-        CommitSpreadsheetEditsAndCapturePendingHistory();
-        SpreadsheetUndoState? beforeChange = CreateCurrentSpreadsheetUndoState(syncFromTable: true);
-
-        ClearSpreadsheetCellValues(spreadsheetTable, selectedCellCoordinates);
-        SyncSpreadsheetDocumentFromTable();
-        RecordSpreadsheetUndoChange(beforeChange, CreateCurrentSpreadsheetUndoState(syncFromTable: false));
-        UpdateLineAndColumnText();
+        ClearSpreadsheetCellValuesAndSync(GetSelectedSpreadsheetCellCoordinates());
     }
 
     internal static void ClearSpreadsheetCellValues(DataTable dataTable, IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates)
@@ -1365,6 +1361,43 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
                     "\t",
                     group.OrderBy(cell => cell.ColumnIndex)
                         .Select(cell => dataTable.Rows[cell.RowIndex][cell.ColumnIndex]?.ToString() ?? string.Empty))));
+    }
+
+    internal static List<double> ExtractSpreadsheetSelectionNumbers(
+        DataTable dataTable,
+        IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates)
+    {
+        ArgumentNullException.ThrowIfNull(dataTable);
+        ArgumentNullException.ThrowIfNull(cellCoordinates);
+
+        List<double> numbers = [];
+
+        foreach ((int rowIndex, int columnIndex) in cellCoordinates.Distinct())
+        {
+            if (rowIndex < 0
+                || rowIndex >= dataTable.Rows.Count
+                || columnIndex < 0
+                || columnIndex >= dataTable.Columns.Count)
+            {
+                continue;
+            }
+
+            string cellText = dataTable.Rows[rowIndex][columnIndex]?.ToString() ?? string.Empty;
+            if (NumericUtilities.TryExtractFirstDouble(cellText, out double number))
+                numbers.Add(number);
+        }
+
+        return numbers;
+    }
+
+    internal static string BuildSpreadsheetSelectionNumbersPreviewText(
+        DataTable dataTable,
+        IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates)
+    {
+        return string.Join(
+            Environment.NewLine,
+            ExtractSpreadsheetSelectionNumbers(dataTable, cellCoordinates)
+                .Select(NumericUtilities.FormatNumber));
     }
 
     internal static List<(int RowIndex, int ColumnIndex)> GetSelectedOrPopulatedSpreadsheetCellCoordinates(
@@ -1719,6 +1752,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             && FindVisualParent<System.Windows.Controls.TextBox>(focusedElement) is not null;
     }
 
+    internal static bool ShouldHandleSpreadsheetDeleteKey(int selectedCellCount, bool isCellEditorFocused)
+    {
+        return !isCellEditorFocused && selectedCellCount > 0;
+    }
+
     private void SpreadsheetColumnWidthChanged(object? sender, EventArgs e)
     {
         if (isApplyingSpreadsheetLayout || tableDocument is null || sender is not DataGridColumn column)
@@ -1890,6 +1928,21 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     {
         string selectionText = BuildSpreadsheetSelectionText(spreadsheetTable, cellCoordinates);
         return !string.IsNullOrEmpty(selectionText) && TrySetClipboardText(selectionText);
+    }
+
+    private void ClearSpreadsheetCellValuesAndSync(IEnumerable<(int RowIndex, int ColumnIndex)> cellCoordinates)
+    {
+        List<(int RowIndex, int ColumnIndex)> targetCellCoordinates = [.. cellCoordinates];
+        if (targetCellCoordinates.Count == 0)
+            return;
+
+        CommitSpreadsheetEditsAndCapturePendingHistory();
+        SpreadsheetUndoState? beforeChange = CreateCurrentSpreadsheetUndoState(syncFromTable: true);
+
+        ClearSpreadsheetCellValues(spreadsheetTable, targetCellCoordinates);
+        SyncSpreadsheetDocumentFromTable();
+        RecordSpreadsheetUndoChange(beforeChange, CreateCurrentSpreadsheetUndoState(syncFromTable: false));
+        UpdateLineAndColumnText();
     }
 
     private bool TryCutSelectedSpreadsheetCellValues()
@@ -3520,11 +3573,57 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         newETW.Show();
     }
 
+    private static EditTextWindow CreateSelectionWindow(string selectedText, EtwEditorMode targetMode)
+    {
+        EditTextWindow selectionWindow = new(selectedText, false);
+        if (targetMode != EtwEditorMode.Text)
+            selectionWindow.SetEditorMode(targetMode);
+
+        return selectionWindow;
+    }
+
+    private void OpenNewWindowWithSpreadsheetSelection()
+    {
+        CommitSpreadsheetEditsAndCapturePendingHistory();
+
+        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = GetSelectedSpreadsheetCellCoordinates();
+        string selectedText = BuildSpreadsheetSelectionText(spreadsheetTable, selectedCellCoordinates);
+        bool hasSelection = selectedCellCoordinates.Count > 0;
+
+        EditTextWindow newEtwWithText = CreateSelectionWindow(
+            selectedText,
+            hasSelection ? EtwEditorMode.Spreadsheet : EtwEditorMode.Text);
+        newEtwWithText.Show();
+    }
+
+    private void OpenNewWindowWithMarkdownSelection()
+    {
+        TextSelection selection = MarkdownEditorControl.Selection;
+        bool hasSelection = !selection.IsEmpty;
+        string selectedText = selection.Text;
+
+        EditTextWindow newEtwWithText = CreateSelectionWindow(
+            selectedText,
+            hasSelection ? EtwEditorMode.Markdown : EtwEditorMode.Text);
+        newEtwWithText.Show();
+    }
+
     private void NewWindowWithText_Clicked(object sender, RoutedEventArgs e)
     {
+        if (editorMode == EtwEditorMode.Spreadsheet)
+        {
+            OpenNewWindowWithSpreadsheetSelection();
+            return;
+        }
+
+        if (editorMode == EtwEditorMode.Markdown)
+        {
+            OpenNewWindowWithMarkdownSelection();
+            return;
+        }
+
         string selectedText = PassedTextControl.SelectedText;
-        PassedTextControl.SelectedText = "";
-        EditTextWindow newEtwWithText = new(selectedText, false);
+        EditTextWindow newEtwWithText = CreateSelectionWindow(selectedText, EtwEditorMode.Text);
         newEtwWithText.Show();
     }
 
@@ -3826,7 +3925,8 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         string input = PassedTextControl.Text;
         if (string.IsNullOrWhiteSpace(input))
         {
-            CalcResultsTextControl.Text = "";
+            calculationResult = null;
+            UpdateCalcPaneTextDisplay();
             _calculationService.ClearParameters();
             UpdateAggregateStatusDisplay();
             // Keep scrolls aligned even when clearing
@@ -3841,8 +3941,8 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         // Evaluate expressions using the service
         calculationResult = await _calculationService.EvaluateExpressionsAsync(input);
 
-        // Update the text control with results
-        CalcResultsTextControl.Text = calculationResult.Output;
+        // Update the text control with results or current spreadsheet selection preview
+        UpdateCalcPaneTextDisplay();
 
         // Update the aggregate status display if an aggregate is selected
         UpdateAggregateStatusDisplay();
@@ -5348,16 +5448,10 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void UpdateCalcAggregates()
     {
-        // Get the text to analyze - selected text if available, otherwise all results
-        string textToAnalyze = !string.IsNullOrEmpty(CalcResultsTextControl.SelectedText)
-            ? CalcResultsTextControl.SelectedText
-            : CalcResultsTextControl.Text;
-
-        // Extract numeric values from the text
-        List<double>? numbers = calculationResult?.OutputNumbers;
+        List<double> numbers = GetCurrentAggregateNumbers();
 
         // Update menu items based on whether we have numbers
-        if (numbers is null || numbers.Count == 0)
+        if (numbers.Count == 0)
         {
             ShowSumContextItem.Header = "Sum: -";
             ShowAverageContextItem.Header = "Average: -";
@@ -5499,17 +5593,13 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void UpdateAggregateStatusDisplay()
     {
-        if (_selectedAggregate == AggregateType.None || calculationResult is null)
+        if (_selectedAggregate == AggregateType.None)
         {
             CalcAggregateStatusBorder.Visibility = Visibility.Collapsed;
             return;
         }
 
-        // Get the text to analyze - all results
-        string textToAnalyze = CalcResultsTextControl.Text;
-
-        // Extract numeric values
-        List<double> numbers = calculationResult.OutputNumbers;
+        List<double> numbers = GetCurrentAggregateNumbers();
 
         if (numbers.Count == 0)
         {
@@ -5561,6 +5651,17 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         CalcAggregateStatusBorder.Visibility = Visibility.Visible;
     }
 
+    private void UpdateCalcPaneTextDisplay()
+    {
+        if (TryGetSpreadsheetSelectionNumbersPreviewText(out string selectionPreviewText))
+        {
+            CalcResultsTextControl.Text = selectionPreviewText;
+            return;
+        }
+
+        CalcResultsTextControl.Text = calculationResult?.Output ?? string.Empty;
+    }
+
     private void CalcAggregateStatusBorder_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(CalcAggregateStatusText.Text))
@@ -5599,11 +5700,10 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void UpdateAggregateContextMenu()
     {
-        // Extract numeric values from the text
-        List<double>? numbers = calculationResult?.OutputNumbers;
+        List<double> numbers = GetCurrentAggregateNumbers();
 
         // Update menu items based on whether we have numbers
-        if (numbers is null || numbers.Count == 0)
+        if (numbers.Count == 0)
         {
             AggregateSumContextItem.Header = "Sum: -";
             AggregateAverageContextItem.Header = "Average: -";
@@ -5685,6 +5785,33 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             AggregateMaxContextItem.IsChecked = _selectedAggregate == AggregateType.Max;
             AggregateProductContextItem.IsChecked = _selectedAggregate == AggregateType.Product;
         }
+    }
+
+    private List<double> GetCurrentAggregateNumbers()
+    {
+        if (editorMode == EtwEditorMode.Spreadsheet)
+        {
+            List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = GetSelectedSpreadsheetCellCoordinates();
+            if (selectedCellCoordinates.Count > 0)
+                return ExtractSpreadsheetSelectionNumbers(spreadsheetTable, selectedCellCoordinates);
+        }
+
+        return calculationResult?.OutputNumbers ?? [];
+    }
+
+    private bool TryGetSpreadsheetSelectionNumbersPreviewText(out string previewText)
+    {
+        previewText = string.Empty;
+
+        if (editorMode != EtwEditorMode.Spreadsheet)
+            return false;
+
+        List<(int RowIndex, int ColumnIndex)> selectedCellCoordinates = GetSelectedSpreadsheetCellCoordinates();
+        if (selectedCellCoordinates.Count == 0)
+            return false;
+
+        previewText = BuildSpreadsheetSelectionNumbersPreviewText(spreadsheetTable, selectedCellCoordinates);
+        return !string.IsNullOrEmpty(previewText);
     }
 
     private void AnimateAggregateCopy()

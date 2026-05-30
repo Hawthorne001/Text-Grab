@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -29,11 +30,16 @@ public partial class HistoryService : IDisposable
     private const string WordBorderInfoFileSuffix = ".wordborders.json";
     private static readonly TimeSpan historyCacheCheckInterval = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan historyCacheIdleLifetime = TimeSpan.FromMinutes(2);
+    private static readonly AsyncLocal<bool> HistoryLanguageKindFallbackUsed = new();
     private static readonly JsonSerializerOptions HistoryJsonOptions = new()
     {
         AllowTrailingCommas = true,
         WriteIndented = true,
-        Converters = { new JsonStringEnumConverter() }
+        Converters =
+        {
+            new HistoryLanguageKindJsonConverter(),
+            new JsonStringEnumConverter()
+        }
     };
     private List<HistoryInfo> HistoryTextOnly = [];
     private List<HistoryInfo> HistoryWithImage = [];
@@ -161,16 +167,16 @@ public partial class HistoryService : IDisposable
         _hasPendingWrite = false;
         ReleaseLoadedHistoriesCore();
 
-        HistoryTextOnly = await LoadHistoryAsync(nameof(HistoryTextOnly));
+        (HistoryTextOnly, bool textHistoryNeedsRewrite) = await LoadHistoryAsync(nameof(HistoryTextOnly));
         _textHistoryLoaded = true;
         NormalizeHistoryIds(HistoryTextOnly);
-        if (NormalizeHistoryCompatibilityData(HistoryTextOnly))
+        if (textHistoryNeedsRewrite || NormalizeHistoryCompatibilityData(HistoryTextOnly))
             MarkHistoryDirty();
 
-        HistoryWithImage = await LoadHistoryAsync(nameof(HistoryWithImage));
+        (HistoryWithImage, bool imageHistoryNeedsRewrite) = await LoadHistoryAsync(nameof(HistoryWithImage));
         _imageHistoryLoaded = true;
         NormalizeHistoryIds(HistoryWithImage);
-        if (NormalizeHistoryCompatibilityData(HistoryWithImage))
+        if (imageHistoryNeedsRewrite || NormalizeHistoryCompatibilityData(HistoryWithImage))
             MarkHistoryDirty();
 
         if (EnsureWordBorderSidecarFiles(HistoryWithImage))
@@ -500,18 +506,79 @@ public partial class HistoryService : IDisposable
 
     #region Private Methods
 
-    private static async Task<List<HistoryInfo>> LoadHistoryAsync(string fileName)
+    private static async Task<(List<HistoryInfo> HistoryItems, bool NeedsRewrite)> LoadHistoryAsync(string fileName)
     {
         string rawText = await FileUtilities.GetTextFileAsync($"{fileName}.json", FileStorageKind.WithHistory);
 
-        if (string.IsNullOrWhiteSpace(rawText)) return [];
+        if (string.IsNullOrWhiteSpace(rawText))
+            return ([], false);
 
-        List<HistoryInfo>? tempHistory = JsonSerializer.Deserialize<List<HistoryInfo>>(rawText, HistoryJsonOptions);
+        try
+        {
+            HistoryLanguageKindFallbackUsed.Value = false;
+            List<HistoryInfo>? tempHistory = JsonSerializer.Deserialize<List<HistoryInfo>>(rawText, HistoryJsonOptions);
 
-        if (tempHistory is List<HistoryInfo> jsonList && jsonList.Count > 0)
-            return tempHistory;
+            if (tempHistory is List<HistoryInfo> jsonList && jsonList.Count > 0)
+                return (tempHistory, HistoryLanguageKindFallbackUsed.Value);
+        }
+        catch (JsonException ex)
+        {
+            Debug.WriteLine($"Failed to deserialize history file '{fileName}.json' as a list. Attempting item-by-item recovery. {ex}");
+            return LoadHistoryWithRecovery(rawText, fileName);
+        }
+        finally
+        {
+            HistoryLanguageKindFallbackUsed.Value = false;
+        }
 
-        return [];
+        return ([], false);
+    }
+
+    private static (List<HistoryInfo> HistoryItems, bool NeedsRewrite) LoadHistoryWithRecovery(string rawText, string fileName)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(rawText);
+
+            if (document.RootElement.ValueKind != JsonValueKind.Array)
+                return ([], true);
+
+            List<HistoryInfo> recoveredHistory = [];
+            bool needsRewrite = true;
+            int index = 0;
+
+            foreach (JsonElement element in document.RootElement.EnumerateArray())
+            {
+                try
+                {
+                    HistoryLanguageKindFallbackUsed.Value = false;
+                    HistoryInfo? historyItem = element.Deserialize<HistoryInfo>(HistoryJsonOptions);
+                    if (historyItem is not null)
+                    {
+                        recoveredHistory.Add(historyItem);
+                        if (HistoryLanguageKindFallbackUsed.Value)
+                            needsRewrite = true;
+                    }
+                }
+                catch (JsonException ex)
+                {
+                    Debug.WriteLine($"Skipped invalid history item at index {index} from '{fileName}.json'. {ex}");
+                }
+                finally
+                {
+                    HistoryLanguageKindFallbackUsed.Value = false;
+                }
+
+                index++;
+            }
+
+            return (recoveredHistory, needsRewrite);
+        }
+        catch (JsonException ex)
+        {
+            Debug.WriteLine($"Failed to parse history file '{fileName}.json' during recovery. {ex}");
+            return ([], true);
+        }
     }
 
     private static void WriteHistoryFiles(List<HistoryInfo> history, string fileName, int maxNumberToSave)
@@ -575,10 +642,10 @@ public partial class HistoryService : IDisposable
         if (_imageHistoryLoaded)
             return;
 
-        HistoryWithImage = LoadHistoryBlocking(nameof(HistoryWithImage));
+        (HistoryWithImage, bool imageHistoryNeedsRewrite) = LoadHistoryBlocking(nameof(HistoryWithImage));
         _imageHistoryLoaded = true;
         NormalizeHistoryIds(HistoryWithImage);
-        if (NormalizeHistoryCompatibilityData(HistoryWithImage))
+        if (imageHistoryNeedsRewrite || NormalizeHistoryCompatibilityData(HistoryWithImage))
             MarkHistoryDirty();
 
         if (EnsureWordBorderSidecarFiles(HistoryWithImage))
@@ -590,10 +657,10 @@ public partial class HistoryService : IDisposable
         if (_textHistoryLoaded)
             return;
 
-        HistoryTextOnly = LoadHistoryBlocking(nameof(HistoryTextOnly));
+        (HistoryTextOnly, bool textHistoryNeedsRewrite) = LoadHistoryBlocking(nameof(HistoryTextOnly));
         _textHistoryLoaded = true;
         NormalizeHistoryIds(HistoryTextOnly);
-        if (NormalizeHistoryCompatibilityData(HistoryTextOnly))
+        if (textHistoryNeedsRewrite || NormalizeHistoryCompatibilityData(HistoryTextOnly))
             MarkHistoryDirty();
     }
 
@@ -611,7 +678,7 @@ public partial class HistoryService : IDisposable
         ReleaseLoadedHistoriesCore();
     }
 
-    private static List<HistoryInfo> LoadHistoryBlocking(string fileName)
+    private static (List<HistoryInfo> HistoryItems, bool NeedsRewrite) LoadHistoryBlocking(string fileName)
     {
         return Task.Run(() => LoadHistoryAsync(fileName)).GetAwaiter().GetResult();
     }
@@ -837,6 +904,51 @@ public partial class HistoryService : IDisposable
 
         if (_textHistoryLoaded || _imageHistoryLoaded)
             historyCacheReleaseTimer.Start();
+    }
+
+    private sealed class HistoryLanguageKindJsonConverter : JsonConverter<LanguageKind>
+    {
+        public override LanguageKind Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                string? value = reader.GetString();
+
+                if (!string.IsNullOrWhiteSpace(value)
+                    && Enum.TryParse(value, true, out LanguageKind parsedValue)
+                    && Enum.IsDefined(typeof(LanguageKind), parsedValue))
+                {
+                    return parsedValue;
+                }
+
+                HistoryLanguageKindFallbackUsed.Value = true;
+                Debug.WriteLine($"Unknown history LanguageKind '{value}'. Falling back to {LanguageKind.Global}.");
+                return LanguageKind.Global;
+            }
+
+            if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out int numericValue))
+            {
+                if (Enum.IsDefined(typeof(LanguageKind), numericValue))
+                    return (LanguageKind)numericValue;
+
+                HistoryLanguageKindFallbackUsed.Value = true;
+                Debug.WriteLine($"Unknown history LanguageKind numeric value '{numericValue}'. Falling back to {LanguageKind.Global}.");
+                return LanguageKind.Global;
+            }
+
+            if (reader.TokenType == JsonTokenType.Null)
+            {
+                HistoryLanguageKindFallbackUsed.Value = true;
+                return LanguageKind.Global;
+            }
+
+            HistoryLanguageKindFallbackUsed.Value = true;
+            Debug.WriteLine($"Unexpected token '{reader.TokenType}' for history LanguageKind. Falling back to {LanguageKind.Global}.");
+            return LanguageKind.Global;
+        }
+
+        public override void Write(Utf8JsonWriter writer, LanguageKind value, JsonSerializerOptions options)
+            => writer.WriteStringValue(value.ToString());
     }
 
     #endregion Private Methods
