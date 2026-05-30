@@ -375,6 +375,9 @@ public partial class GrabFrame : Window
 
         TableToggleButton.IsChecked = history.IsTable;
 
+        if (ShouldRefreshOcrBordersForTableModeActivation())
+            await DrawRectanglesAroundWords(SearchBox.Text);
+
         UpdateFrameText();
         history.ClearTransientImage();
     }
@@ -1426,6 +1429,9 @@ public partial class GrabFrame : Window
 
     public void MergeSelectedWordBorders()
     {
+        if (TableToggleButton.IsChecked is true)
+            return;
+
         ShouldSaveOnClose = true;
         RectanglesCanvas.ContextMenu.IsOpen = false;
         FreezeGrabFrame();
@@ -1712,10 +1718,9 @@ public partial class GrabFrame : Window
 
     private void CanExecuteMergeWordBorders(object sender, CanExecuteRoutedEventArgs e)
     {
-        if (SelectedWordBorders().Count > 1)
-            e.CanExecute = true;
-        else
-            e.CanExecute = false;
+        e.CanExecute = ShouldAllowWordBorderMerging(
+            TableToggleButton.IsChecked is true,
+            SelectedWordBorders().Count);
     }
 
     private void CanPasteExecute(object sender, CanExecuteRoutedEventArgs e)
@@ -4560,15 +4565,35 @@ new GrabFrameOperationArgs()
         return OcrUtilities.ShouldUseParagraphDetection(isSpaceJoining, TableToggleButton.IsChecked is true);
     }
 
+    internal static bool ShouldAllowWordBorderMerging(bool isTableModeSelected, int selectedWordBorderCount)
+    {
+        return !isTableModeSelected && selectedWordBorderCount > 1;
+    }
+
+    internal static bool ShouldRefreshOcrBordersForTableModeActivation(
+        bool isTableModeSelected,
+        ILanguage? language,
+        bool paragraphDetectionEnabled,
+        bool hasNativePdfText,
+        bool hasMergedParagraphBorders)
+    {
+        return isTableModeSelected
+            && language is not null
+            && language is not UiAutomationLang
+            && language.IsSpaceJoining()
+            && paragraphDetectionEnabled
+            && !hasNativePdfText
+            && hasMergedParagraphBorders;
+    }
+
     private bool ShouldRefreshOcrBordersForTableModeActivation()
     {
-        return TableToggleButton.IsChecked is true
-            && CurrentLanguage is not null
-            && CurrentLanguage is not UiAutomationLang
-            && CurrentLanguage.IsSpaceJoining()
-            && DefaultSettings.ParagraphDetection
-            && _currentPdfPageContent?.HasNativeText is not true
-            && wordBorders.Any(wb => wb.KeepSingleLineOutput);
+        return ShouldRefreshOcrBordersForTableModeActivation(
+            TableToggleButton.IsChecked is true,
+            CurrentLanguage,
+            DefaultSettings.ParagraphDetection,
+            _currentPdfPageContent?.HasNativeText is true,
+            wordBorders.Any(wb => wb.KeepSingleLineOutput));
     }
 
     private void Window_Closed(object? sender, EventArgs e)
