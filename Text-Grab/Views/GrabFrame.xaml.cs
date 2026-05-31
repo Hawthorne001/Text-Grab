@@ -1434,7 +1434,8 @@ public partial class GrabFrame : Window
 
         ShouldSaveOnClose = true;
         RectanglesCanvas.ContextMenu.IsOpen = false;
-        FreezeGrabFrame();
+        if (!IsFreezeMode)
+            FreezeGrabFrame();
 
         List<WordBorder> selectedWordBorders = [.. wordBorders.Where(w => w.IsSelected).OrderBy(o => o.Left)];
 
@@ -1624,7 +1625,8 @@ public partial class GrabFrame : Window
 
     private async void AddNewWordBorder(Border selectBorder)
     {
-        FreezeGrabFrame();
+        if (!IsFreezeMode)
+            FreezeGrabFrame();
 
         ShouldSaveOnClose = true;
         DpiScale dpi = VisualTreeHelper.GetDpi(this);
@@ -1890,7 +1892,8 @@ public partial class GrabFrame : Window
 
     private List<WordBorder> DeleteSelectedWordBorders()
     {
-        FreezeGrabFrame();
+        if (!IsFreezeMode)
+            FreezeGrabFrame();
 
         List<WordBorder> selectedWordBorders = [.. wordBorders.Where(x => x.IsSelected)];
 
@@ -2807,7 +2810,7 @@ public partial class GrabFrame : Window
         if (Keyboard.Modifiers != ModifierKeys.Alt)
             wasAltHeld = false;
 
-        if (AutoOcrCheckBox.IsChecked is true)
+        if (AutoOcrCheckBox.IsChecked is true && !IsFreezeMode)
             FreezeGrabFrame();
     }
 
@@ -3393,7 +3396,8 @@ public partial class GrabFrame : Window
 
         if (movingWordBordersDictionary.Count > 0)
         {
-            FreezeGrabFrame();
+            if (!IsFreezeMode)
+                FreezeGrabFrame();
             MoveAllWordBorders(movingPoint);
             return;
         }
