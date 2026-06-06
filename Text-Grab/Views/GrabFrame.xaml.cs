@@ -91,6 +91,7 @@ public partial class GrabFrame : Window
     private readonly ObservableCollection<WordBorder> wordBorders = [];
     private static readonly Settings DefaultSettings = AppUtilities.TextGrabSettings;
     private ScrollBehavior scrollBehavior = ScrollBehavior.Resize;
+    private GrabFrameWordGroupingMode wordGroupingMode = GrabFrameWordGroupingMode.Paragraph;
     private double overlayOpacity = 0.05;
     private bool isTranslationEnabled = false;
     private string translationTargetLanguage = "English";
@@ -1984,20 +1985,61 @@ public partial class GrabFrame : Window
             positionedLines.Add(new OcrUtilities.PositionedOcrLine(i, GetNormalizedOcrLineText(ocrLine), ocrLine.BoundingBox));
         }
 
-        if (!IsParagraphDetectionActive())
+        return wordGroupingMode switch
         {
-            return
-            [
-                .. positionedLines.Select(line => new OcrBorderRenderInfo
+            GrabFrameWordGroupingMode.Word => CreateWordLevelBorderInfos(),
+            GrabFrameWordGroupingMode.Paragraph => CreateParagraphBorderInfos(positionedLines, dpi, viewBoxZoomFactor),
+            GrabFrameWordGroupingMode.Window => CreateWindowBorderInfo(positionedLines),
+            _ => CreateLineLevelBorderInfos(positionedLines), // Line (default)
+        };
+    }
+
+    private IReadOnlyList<OcrBorderRenderInfo> CreateLineLevelBorderInfos(
+        List<OcrUtilities.PositionedOcrLine> positionedLines)
+    {
+        return
+        [
+            .. positionedLines.Select(line => new OcrBorderRenderInfo
+            {
+                DisplayText = line.Text,
+                LineNumber = line.LineNumber,
+                SourceRect = line.BoundingBox,
+                Text = line.Text,
+            })
+        ];
+    }
+
+    private IReadOnlyList<OcrBorderRenderInfo> CreateWordLevelBorderInfos()
+    {
+        if (ocrResultOfWindow is null)
+            return [];
+
+        List<OcrBorderRenderInfo> result = [];
+
+        for (int lineIdx = 0; lineIdx < ocrResultOfWindow.Lines.Length; lineIdx++)
+        {
+            IOcrLine ocrLine = ocrResultOfWindow.Lines[lineIdx];
+            foreach (IOcrWord word in ocrLine.Words)
+            {
+                string wordText = GetNormalizedOcrWordText(word);
+                result.Add(new OcrBorderRenderInfo
                 {
-                    DisplayText = line.Text,
-                    LineNumber = line.LineNumber,
-                    SourceRect = line.BoundingBox,
-                    Text = line.Text,
-                })
-            ];
+                    DisplayText = wordText,
+                    LineNumber = lineIdx,
+                    SourceRect = word.BoundingBox,
+                    Text = wordText,
+                });
+            }
         }
 
+        return result;
+    }
+
+    private IReadOnlyList<OcrBorderRenderInfo> CreateParagraphBorderInfos(
+        List<OcrUtilities.PositionedOcrLine> positionedLines,
+        DpiScale dpi,
+        double viewBoxZoomFactor)
+    {
         return
         [
             .. OcrUtilities.GroupWrappedParagraphLines(positionedLines)
@@ -2013,6 +2055,55 @@ public partial class GrabFrame : Window
                     Text = group.SingleLineText,
                 })
         ];
+    }
+
+    private IReadOnlyList<OcrBorderRenderInfo> CreateWindowBorderInfo(
+        List<OcrUtilities.PositionedOcrLine> positionedLines)
+    {
+        if (positionedLines.Count == 0)
+            return [];
+
+        Windows.Foundation.Rect unionRect = positionedLines[0].BoundingBox;
+        StringBuilder textBuilder = new();
+        textBuilder.Append(positionedLines[0].Text);
+
+        for (int i = 1; i < positionedLines.Count; i++)
+        {
+            Windows.Foundation.Rect r = positionedLines[i].BoundingBox;
+            double left = Math.Min(unionRect.X, r.X);
+            double top = Math.Min(unionRect.Y, r.Y);
+            double right = Math.Max(unionRect.X + unionRect.Width, r.X + r.Width);
+            double bottom = Math.Max(unionRect.Y + unionRect.Height, r.Y + r.Height);
+            unionRect = new Windows.Foundation.Rect(left, top, right - left, bottom - top);
+
+            textBuilder.AppendLine();
+            textBuilder.Append(positionedLines[i].Text);
+        }
+
+        string fullText = textBuilder.ToString();
+        return
+        [
+            new OcrBorderRenderInfo
+            {
+                DisplayText = fullText,
+                LineNumber = 0,
+                SourceRect = unionRect,
+                Text = fullText,
+            }
+        ];
+    }
+
+    private string GetNormalizedOcrWordText(IOcrWord word)
+    {
+        string wordText = word.Text;
+
+        if (DefaultSettings.CorrectErrors)
+            wordText = wordText.TryFixNumberLetterErrors();
+
+        if (DefaultSettings.CorrectToLatin)
+            wordText = wordText.ReplaceGreekOrCyrillicWithLatin();
+
+        return wordText;
     }
 
     private double GetDisplayHeightFromSourceHeight(double sourceHeight, DpiScale dpi, double sourceScale, double viewBoxZoomFactor)
@@ -2766,6 +2857,16 @@ public partial class GrabFrame : Window
         AlwaysUpdateEtwCheckBox.IsChecked = DefaultSettings.GrabFrameUpdateEtw;
         CloseOnGrabMenuItem.IsChecked = DefaultSettings.CloseFrameOnGrab;
         ReadBarcodesMenuItem.IsChecked = DefaultSettings.GrabFrameReadBarcodes;
+
+        if (string.IsNullOrWhiteSpace(DefaultSettings.GrabFrameWordGrouping)
+            || !Enum.TryParse(DefaultSettings.GrabFrameWordGrouping, out wordGroupingMode))
+        {
+            wordGroupingMode = DefaultSettings.ParagraphDetection
+                ? GrabFrameWordGroupingMode.Paragraph
+                : GrabFrameWordGroupingMode.Line;
+        }
+
+        SetWordGroupingMenuItems();
         GetGrabFrameTranslationSettings();
         _ = Enum.TryParse(DefaultSettings.GrabFrameScrollBehavior, out scrollBehavior);
         SetScrollBehaviorMenuItems();
@@ -4549,7 +4650,7 @@ new GrabFrameOperationArgs()
                         .Select(w => (w.Top, w.Left, w.Height, w.Word, AllowParagraphJoin: false))
                         .Concat(pdfTextLineOverlays.Select(line => (line.Top, line.Left, line.Height, line.Text, AllowParagraphJoin: true))));
             else
-                AppendWordBordersWithParagraphDetection(stringBuilder);
+                AppendWordBordersForMode(stringBuilder);
         }
 
         FrameText = stringBuilder.ToString();
@@ -4571,29 +4672,65 @@ new GrabFrameOperationArgs()
         UpdateTemplateRegionOverlay();
     }
 
-    private void AppendWordBordersWithParagraphDetection(StringBuilder sb)
+    private void AppendWordBordersForMode(StringBuilder sb)
     {
         List<WordBorder> sorted = [.. wordBorders.OrderBy(w => w.Top).ThenBy(w => w.Left)];
         if (sorted.Count == 0)
             return;
 
-        sb.Append(sorted[0].Word);
-        for (int i = 1; i < sorted.Count; i++)
+        switch (wordGroupingMode)
         {
-            WordBorder prev = sorted[i - 1];
-            WordBorder curr = sorted[i];
-            if (IsParagraphDetectionActive()
-                && OcrUtilities.IsWrappedParagraph(prev.Top, prev.Height, curr.Top, curr.Height))
-                sb.Append(' ');
-            else
-                sb.AppendLine();
-            sb.Append(curr.Word);
+            case GrabFrameWordGroupingMode.Word:
+                // Group by LineNumber; join words on the same line with a space,
+                // and separate lines with a newline.
+                IOrderedEnumerable<IGrouping<int, WordBorder>> lineGroups = sorted
+                    .GroupBy(w => w.LineNumber)
+                    .OrderBy(g => g.Min(w => w.Top));
+                bool firstLine = true;
+                foreach (IGrouping<int, WordBorder>? lineGroup in lineGroups)
+                {
+                    if (!firstLine)
+                        sb.AppendLine();
+                    firstLine = false;
+                    sb.Append(string.Join(" ", lineGroup.OrderBy(w => w.Left).Select(w => w.Word)));
+                }
+                break;
+
+            case GrabFrameWordGroupingMode.Window:
+                // Single WordBorder — its Word already contains the full text.
+                sb.Append(sorted[0].Word);
+                break;
+
+            case GrabFrameWordGroupingMode.Paragraph:
+                sb.Append(sorted[0].Word);
+                for (int i = 1; i < sorted.Count; i++)
+                {
+                    WordBorder prev = sorted[i - 1];
+                    WordBorder curr = sorted[i];
+                    if (IsParagraphDetectionActive()
+                        && OcrUtilities.IsWrappedParagraph(prev.Top, prev.Height, curr.Top, curr.Height))
+                        sb.Append(' ');
+                    else
+                        sb.AppendLine();
+                    sb.Append(curr.Word);
+                }
+                break;
+
+            default: // Line
+                sb.Append(sorted[0].Word);
+                for (int i = 1; i < sorted.Count; i++)
+                {
+                    sb.AppendLine();
+                    sb.Append(sorted[i].Word);
+                }
+                break;
         }
     }
 
     private bool IsParagraphDetectionActive()
     {
-        return OcrUtilities.ShouldUseParagraphDetection(isSpaceJoining, TableToggleButton.IsChecked is true);
+        return wordGroupingMode == GrabFrameWordGroupingMode.Paragraph
+            && OcrUtilities.ShouldUseParagraphDetection(isSpaceJoining, TableToggleButton.IsChecked is true);
     }
 
     internal static bool ShouldAllowWordBorderMerging(bool isTableModeSelected, int selectedWordBorderCount)
@@ -4622,7 +4759,7 @@ new GrabFrameOperationArgs()
         return ShouldRefreshOcrBordersForTableModeActivation(
             TableToggleButton.IsChecked is true,
             CurrentLanguage,
-            DefaultSettings.ParagraphDetection,
+            wordGroupingMode == GrabFrameWordGroupingMode.Paragraph,
             _currentPdfPageContent?.HasNativeText is true,
             wordBorders.Any(wb => wb.KeepSingleLineOutput));
     }
@@ -4882,6 +5019,14 @@ new GrabFrameOperationArgs()
         DefaultSettings.GrabFrameScrollBehavior = scrollBehavior.ToString();
         DefaultSettings.Save();
         SetScrollBehaviorMenuItems();
+    }
+
+    private void SetWordGroupingMenuItems()
+    {
+        WordGroupingWordMenuItem.IsChecked = wordGroupingMode == GrabFrameWordGroupingMode.Word;
+        WordGroupingLineMenuItem.IsChecked = wordGroupingMode == GrabFrameWordGroupingMode.Line;
+        WordGroupingParagraphMenuItem.IsChecked = wordGroupingMode == GrabFrameWordGroupingMode.Paragraph;
+        WordGroupingWindowMenuItem.IsChecked = wordGroupingMode == GrabFrameWordGroupingMode.Window;
     }
 
     private void SetScrollBehaviorMenuItems()
@@ -5169,6 +5314,21 @@ new GrabFrameOperationArgs()
 
         DefaultSettings.GrabFrameReadBarcodes = barcodeMenuItem.IsChecked is true;
         DefaultSettings.Save();
+    }
+
+    private async void WordGroupingMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem
+            || !Enum.TryParse(menuItem.Tag?.ToString(), out GrabFrameWordGroupingMode newMode))
+            return;
+
+        wordGroupingMode = newMode;
+        DefaultSettings.GrabFrameWordGrouping = wordGroupingMode.ToString();
+        DefaultSettings.Save();
+        SetWordGroupingMenuItems();
+
+        await DrawRectanglesAroundWords(SearchBox.Text);
+        UpdateFrameText();
     }
 
     private async void TranslateToggleButton_Click(object sender, RoutedEventArgs e)

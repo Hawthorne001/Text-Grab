@@ -125,6 +125,32 @@
                             Header="Try to read barcodes and QR Codes"
                             IsCheckable="True"
                             Unchecked="ReadBarcodesMenuItem_Checked" />
+                        <MenuItem Header="Word Grouping">
+                            <MenuItem
+                                x:Name="WordGroupingWordMenuItem"
+                                Click="WordGroupingMenuItem_Click"
+                                Header="Word"
+                                IsCheckable="True"
+                                Tag="Word" />
+                            <MenuItem
+                                x:Name="WordGroupingLineMenuItem"
+                                Click="WordGroupingMenuItem_Click"
+                                Header="Line"
+                                IsCheckable="True"
+                                Tag="Line" />
+                            <MenuItem
+                                x:Name="WordGroupingParagraphMenuItem"
+                                Click="WordGroupingMenuItem_Click"
+                                Header="Paragraph"
+                                IsCheckable="True"
+                                Tag="Paragraph" />
+                            <MenuItem
+                                x:Name="WordGroupingWindowMenuItem"
+                                Click="WordGroupingMenuItem_Click"
+                                Header="Window"
+                                IsCheckable="True"
+                                Tag="Window" />
+                        </MenuItem>
                         <MenuItem
                             x:Name="IsTopmostMenuItem"
                             Header="Keep Grab Frame On Top"
