@@ -982,5 +982,17 @@ namespace Text_Grab.Properties {
                 this["ParagraphDetection"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string GrabFrameWordGrouping {
+            get {
+                return ((string)(this["GrabFrameWordGrouping"]));
+            }
+            set {
+                this["GrabFrameWordGrouping"] = value;
+            }
+        }
     }
 }
