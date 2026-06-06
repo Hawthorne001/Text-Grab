@@ -180,7 +180,7 @@ public class ExtractedPattern
             return 3; // Character-class for mixed content
 
         // Short text (2-4 chars) - prefer per-character for small variations
-        if (length >= 2 && length <= 4)
+        if (length is >= 2 and <= 4)
             return 4; // Per-character for 2-4 chars
 
         // Single word, all letters ("Hello") - names, simple words
