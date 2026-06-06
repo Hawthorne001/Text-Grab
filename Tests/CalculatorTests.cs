@@ -13,7 +13,7 @@ public class CalculatorTests
         // Test if NCalc has built-in Pi constant
         AsyncExpression expression = new("Pi");
 
-        NCalcParameterNotDefinedException exception = await Assert.ThrowsAsync<NCalcParameterNotDefinedException>(async () => await expression.EvaluateAsync());
+        NCalcParameterNotDefinedException exception = await Assert.ThrowsAsync<NCalcParameterNotDefinedException>(async () => await expression.EvaluateAsync(TestContext.Current.CancellationToken));
         Assert.Contains("Pi", exception.Message);
     }
 
@@ -23,7 +23,7 @@ public class CalculatorTests
         // Test if NCalc has built-in E constant
         AsyncExpression expression = new("E");
 
-        NCalcParameterNotDefinedException exception = await Assert.ThrowsAsync<NCalcParameterNotDefinedException>(async () => await expression.EvaluateAsync());
+        NCalcParameterNotDefinedException exception = await Assert.ThrowsAsync<NCalcParameterNotDefinedException>(async () => await expression.EvaluateAsync(TestContext.Current.CancellationToken));
         Assert.Contains("E", exception.Message);
     }
 
@@ -57,7 +57,7 @@ public class CalculatorTests
                 };
             }
 
-            double result = Convert.ToDouble(await expression.EvaluateAsync());
+            double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
 
             Assert.Equal(expected, result, 10); // 10 decimal places precision
         }
@@ -75,7 +75,7 @@ public class CalculatorTests
             return ValueTask.CompletedTask;
         };
 
-        double result = Convert.ToDouble(await expression.EvaluateAsync());
+        double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(1.0, result, 10);
     }
@@ -92,7 +92,7 @@ public class CalculatorTests
             return ValueTask.CompletedTask;
         };
 
-        double result = Convert.ToDouble(await expression.EvaluateAsync());
+        double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(1.0, result, 10);
     }
@@ -113,7 +113,7 @@ public class CalculatorTests
             return ValueTask.CompletedTask;
         };
 
-        double result = Convert.ToDouble(await expression.EvaluateAsync());
+        double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
         double expected = Math.PI * Math.E;
 
         Assert.Equal(expected, result, 10);
@@ -149,7 +149,7 @@ public class CalculatorTests
             return ValueTask.CompletedTask;
         };
 
-        double result = Convert.ToDouble(await expression.EvaluateAsync());
+        double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(Math.PI, result, 10);
     }
@@ -185,7 +185,7 @@ public class CalculatorTests
                 return ValueTask.CompletedTask;
             };
 
-            double result = Convert.ToDouble(await expression.EvaluateAsync());
+            double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
 
             Assert.Equal(expectedValue, result, 10);
         }
@@ -207,7 +207,7 @@ public class CalculatorTests
             return ValueTask.CompletedTask;
         };
 
-        double result = Convert.ToDouble(await expression.EvaluateAsync());
+        double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
 
         // Sin(π/6) + Cos(π/3) + Log_e(e) = 0.5 + 0.5 + 1 = 2.0
         Assert.Equal(2.0, result, 10);
@@ -230,7 +230,7 @@ public class CalculatorTests
             return ValueTask.CompletedTask;
         };
 
-        double result = Convert.ToDouble(await expression.EvaluateAsync());
+        double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
         double expected = Math.Sqrt(Math.PI * Math.E);
 
         Assert.Equal(expected, result, 10);
@@ -274,7 +274,7 @@ public class CalculatorTests
             return ValueTask.CompletedTask;
         };
 
-        double result = Convert.ToDouble(await expression.EvaluateAsync());
+        double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(expectedValue, result, 5); // 5 decimal places precision for constants
     }
@@ -1523,7 +1523,7 @@ grandTotal";
         // For very large numbers like octillion (10^27), expect some precision loss
         // Just verify we get a number in the right ballpark (starts with 1 or 2)
         string cleanResult = result.Output.Replace(",", "").Replace(".0", "");
-        Assert.True(cleanResult.StartsWith("1") || cleanResult.StartsWith("2"),
+        Assert.True(cleanResult.StartsWith('1') || cleanResult.StartsWith('2'),
             $"Expected result to start with 1 or 2, got: {cleanResult}");
         Assert.True(cleanResult.Length >= 27,
             $"Expected at least 27 digits for octillion, got: {cleanResult.Length}");
@@ -3151,6 +3151,32 @@ totalCost";
         Assert.Equal(0, result.ErrorCount);
     }
 
+    [Fact]
+    public async Task DateTimeMath_DateSubtraction_TargetUnitWeeks()
+    {
+        CalculationService service = new();
+        string input = "5-14-26 - 1-12-25 in weeks";
+        CalculationResult result = await service.EvaluateExpressionsAsync(input);
+
+        Assert.Contains("weeks", result.Output);
+        Assert.Single(result.OutputNumbers);
+        Assert.InRange(result.OutputNumbers[0], 69.57, 69.58);
+        Assert.Equal(0, result.ErrorCount);
+    }
+
+    [Fact]
+    public async Task DateTimeMath_DateSubtraction_TargetUnitDays()
+    {
+        CalculationService service = new();
+        string input = "March 10, 2026 - January 1, 2026 to days";
+        CalculationResult result = await service.EvaluateExpressionsAsync(input);
+
+        Assert.Equal("68 days", result.Output);
+        Assert.Single(result.OutputNumbers);
+        Assert.Equal(68, result.OutputNumbers[0], 3);
+        Assert.Equal(0, result.ErrorCount);
+    }
+
     #endregion Date Subtraction (Date - Date = Timespan) Tests
 
     #region Date Operator Continuation Tests
@@ -3230,6 +3256,15 @@ totalCost";
         // 3pm + 3 hours = 6pm
         Assert.Contains("6:00pm", lines[1].ToLowerInvariant());
         Assert.Equal(0, result.ErrorCount);
+    }
+
+    [Fact]
+    public void TryEvaluateDateTimeMath_DurationConversion_ReturnsTrue()
+    {
+        bool matched = CalculationService.TryEvaluateDateTimeMath("3.6 years to days", out string result);
+
+        Assert.True(matched);
+        Assert.Contains("days", result);
     }
 
     [Fact]

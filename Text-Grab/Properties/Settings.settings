@@ -188,6 +188,9 @@
     <Setting Name="EtwShowSimilarMatches" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
     </Setting>
+    <Setting Name="EtwNormalizeLineEndingsOnPaste" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
     <Setting Name="RegexList" Type="System.String" Scope="User">
       <Value Profile="(Default)" />
     </Setting>
@@ -235,6 +238,12 @@
     </Setting>
     <Setting Name="RegisterOpenWith" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">False</Value>
+    </Setting>
+    <Setting Name="ParagraphDetection" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="GrabFrameWordGrouping" Type="System.String" Scope="User">
+      <Value Profile="(Default)" />
     </Setting>
   </Settings>
 </SettingsFile>

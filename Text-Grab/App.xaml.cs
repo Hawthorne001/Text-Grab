@@ -2,14 +2,12 @@
 using Microsoft.Win32;
 using RegistryUtils;
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Markup;
-using System.Windows.Media;
 using System.Windows.Threading;
 using Text_Grab.Controls;
 using Text_Grab.Models;
@@ -19,7 +17,6 @@ using Text_Grab.Utilities;
 using Text_Grab.Views;
 using Wpf.Ui;
 using Wpf.Ui.Appearance;
-using Wpf.Ui.Extensions;
 
 namespace Text_Grab;
 
@@ -28,9 +25,17 @@ namespace Text_Grab;
 /// </summary>
 public partial class App : System.Windows.Application
 {
+    internal readonly record struct StartupArguments(
+        bool IsQuiet,
+        bool OpenInGrabFrame,
+        string? PrimaryArgument,
+        string? GrabFramePath);
+
     #region Fields
 
     private static readonly Settings _defaultSettings = AppUtilities.TextGrabSettings;
+    private static RegistryMonitor? _themeRegistryMonitor;
+    private static RegistryKey? _themeRegistryKey;
 
     #endregion Fields
 
@@ -72,6 +77,49 @@ public partial class App : System.Windows.Application
         }
 
         SetTheme();
+    }
+
+    public static async Task OpenFileWithPickerAsync(bool isQuiet = false)
+    {
+        OpenFileDialog openFileDialog = new()
+        {
+            Filter = FileUtilities.GetOpenDocumentFilter(),
+            Title = "Open File",
+            CheckFileExists = true,
+            InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+        };
+
+        if (openFileDialog.ShowDialog() == true)
+            await TryToOpenFilePathAsync(openFileDialog.FileName, isQuiet);
+    }
+
+    public static DragDropEffects GetDroppedFileEffect(IDataObject? dataObject)
+    {
+        return GetDroppedFilePaths(dataObject).Any()
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+    }
+
+    public static IReadOnlyList<string> GetDroppedFilePaths(IDataObject? dataObject)
+    {
+        if (dataObject is null || !dataObject.GetDataPresent(DataFormats.FileDrop, true))
+            return [];
+
+
+        if (dataObject.GetData(DataFormats.FileDrop, true) is not string[] paths || paths.Length == 0)
+            return [];
+
+        return [.. paths.Where(File.Exists)];
+    }
+
+    public static async Task<bool> TryToOpenDroppedFilesAsync(IDataObject? dataObject, bool isQuiet = false)
+    {
+        bool openedAny = false;
+
+        foreach (string path in GetDroppedFilePaths(dataObject))
+            openedAny = await TryToOpenFilePathAsync(path, isQuiet) || openedAny;
+
+        return openedAny;
     }
 
     public static void SetTheme(object? sender = null, EventArgs? e = null)
@@ -162,13 +210,33 @@ public partial class App : System.Windows.Application
 
     public static void WatchTheme()
     {
-        if (Registry.CurrentUser.OpenSubKey(SystemThemeUtility.themeKeyPath) is not RegistryKey key)
-            return;
+        StopWatchingTheme();
 
-        RegistryMonitor monitor = new(key);
-        monitor.RegChanged += new EventHandler(SetTheme);
-        monitor.Start();
+        if (Registry.CurrentUser.OpenSubKey(SystemThemeUtility.themeKeyPath) is not RegistryKey key)
+        {
+            SetTheme();
+            return;
+        }
+
+        _themeRegistryKey = key;
+        _themeRegistryMonitor = new RegistryMonitor(key);
+        _themeRegistryMonitor.RegChanged += new EventHandler(SetTheme);
+        _themeRegistryMonitor.Start();
         SetTheme();
+    }
+
+    private static void StopWatchingTheme()
+    {
+        if (_themeRegistryMonitor is not null)
+        {
+            _themeRegistryMonitor.RegChanged -= new EventHandler(SetTheme);
+            try { _themeRegistryMonitor.Dispose(); }
+            catch (ObjectDisposedException) { }
+            _themeRegistryMonitor = null;
+        }
+
+        _themeRegistryKey?.Dispose();
+        _themeRegistryKey = null;
     }
 
     private static async Task<bool> CheckForOcringFolder(string currentArgument)
@@ -183,74 +251,84 @@ public partial class App : System.Windows.Application
         return true;
     }
 
-    private static readonly HashSet<string> KnownFlags = ["--windowless", "--grabframe"];
-
-    private static async Task<bool> HandleStartupArgs(string[] args)
+    internal static StartupArguments ParseStartupArguments(IEnumerable<string> args)
     {
-        string currentArgument = args[0];
-
         bool isQuiet = false;
         bool openInGrabFrame = false;
+        string? primaryArgument = null;
+        string? grabFramePath = null;
 
         foreach (string arg in args)
         {
-            if (arg == "--windowless")
+            if (string.Equals(arg, "--windowless", StringComparison.OrdinalIgnoreCase))
             {
                 isQuiet = true;
-                _defaultSettings.FirstRun = false;
-                _defaultSettings.Save();
+                continue;
             }
-            else if (arg == "--grabframe")
+
+            if (string.Equals(arg, "--grabframe", StringComparison.OrdinalIgnoreCase))
             {
                 openInGrabFrame = true;
+                continue;
+            }
+
+            primaryArgument ??= arg;
+
+            if (grabFramePath is not null)
+                continue;
+
+            try
+            {
+                string absolutePath = Path.GetFullPath(arg);
+                if (File.Exists(absolutePath))
+                    grabFramePath = absolutePath;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Invalid path argument: {arg}, error: {ex.Message}");
             }
         }
 
-        // Handle --grabframe flag: open the next argument (file path) in GrabFrame
-        if (openInGrabFrame)
-        {
-            // Find the file path argument (skip known flags)
-            string? filePath = null;
-            foreach (string arg in args)
-            {
-                if (!KnownFlags.Contains(arg))
-                {
-                    // Convert to absolute path to handle relative paths correctly
-                    try
-                    {
-                        string absolutePath = Path.GetFullPath(arg);
-                        if (File.Exists(absolutePath))
-                        {
-                            filePath = absolutePath;
-                            break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Invalid path argument: {arg}, error: {ex.Message}");
-                    }
-                }
-            }
+        return new StartupArguments(isQuiet, openInGrabFrame, primaryArgument, grabFramePath);
+    }
 
-            if (!string.IsNullOrEmpty(filePath))
+    private static async Task<bool> HandleStartupArgs(string[] args)
+    {
+        StartupArguments startupArguments = ParseStartupArguments(args);
+
+        if (startupArguments.IsQuiet)
+        {
+            _defaultSettings.FirstRun = false;
+            _defaultSettings.Save();
+        }
+
+        // Handle --grabframe flag: open the next argument (file path) in GrabFrame
+        if (startupArguments.OpenInGrabFrame)
+        {
+            if (!string.IsNullOrEmpty(startupArguments.GrabFramePath))
             {
-                GrabFrame gf = new(filePath);
+                GrabFrame gf = new(startupArguments.GrabFramePath);
                 gf.Show();
                 return true;
             }
             else
             {
-                Debug.WriteLine("--grabframe flag specified but no valid image file path provided");
+                Debug.WriteLine("--grabframe flag specified but no valid image or PDF file path provided");
                 // Fall through to default launch behavior
             }
         }
 
-        if (currentArgument.Contains("ToastActivated"))
+        if (string.IsNullOrWhiteSpace(startupArguments.PrimaryArgument))
+            return false;
+
+        string currentArgument = startupArguments.PrimaryArgument;
+
+        if (currentArgument.Contains("ToastActivated", StringComparison.Ordinal))
         {
             Debug.WriteLine("Launched from toast");
             return true;
         }
-        else if (currentArgument == "Settings")
+        else if (string.Equals(currentArgument, "Settings", StringComparison.OrdinalIgnoreCase))
         {
             SettingsWindow sw = new();
             sw.Show();
@@ -265,7 +343,7 @@ public partial class App : System.Windows.Application
             return true;
         }
 
-        bool openedFile = await TryToOpenFile(currentArgument, isQuiet);
+        bool openedFile = await TryToOpenFilePathAsync(currentArgument, startupArguments.IsQuiet);
         if (openedFile)
             return true;
 
@@ -305,7 +383,7 @@ public partial class App : System.Windows.Application
         _defaultSettings.Save();
     }
 
-    private static async Task<bool> TryToOpenFile(string possiblePath, bool isQuiet)
+    public static async Task<bool> TryToOpenFilePathAsync(string possiblePath, bool isQuiet = false)
     {
         if (!File.Exists(possiblePath))
             return false;
@@ -318,7 +396,7 @@ public partial class App : System.Windows.Application
                 false,
                 false);
         }
-        else if (IoUtilities.IsImageFile(possiblePath))
+        else if (IoUtilities.IsVisualDocumentFile(possiblePath))
         {
             GrabFrame gf = new(possiblePath);
             gf.Show();
@@ -329,6 +407,7 @@ public partial class App : System.Windows.Application
             EditTextWindow manipulateTextWindow = new();
             manipulateTextWindow.OpenPath(possiblePath);
             manipulateTextWindow.Show();
+            manipulateTextWindow.Activate();
         }
         return true;
     }
@@ -336,7 +415,15 @@ public partial class App : System.Windows.Application
     private void appExit(object sender, ExitEventArgs e)
     {
         TextGrabIcon?.Close();
-        Singleton<HistoryService>.Instance.WriteHistory();
+
+        NotifyIconUtilities.UnregisterHotkeys(this);
+        HotKeyIds.Clear();
+
+        StopWatchingTheme();
+
+        HistoryService historyService = Singleton<HistoryService>.Instance;
+        historyService.WriteHistory();
+        historyService.Dispose();
     }
 
     private async void appStartup(object sender, StartupEventArgs e)

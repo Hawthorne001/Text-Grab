@@ -15,6 +15,10 @@ public class UnitConversionTests
     [InlineData("1 kg to pounds", "lb")]
     [InlineData("3.5 gallons to liters", "L")]
     [InlineData("60 mph to km/h", "km/h")]
+    [InlineData("8 min/mi to mph", "mph")]
+    [InlineData("9:30 min/mi to mph", "mph")]
+    [InlineData("8 min/mi to min/km", "min/km")]
+    [InlineData("12 km/hr to min/km", "min/km")]
     [InlineData("1 acre to sq m", "m²")]
     [InlineData("12 inches to feet", "ft")]
     [InlineData("1000 grams to kg", "kg")]
@@ -41,6 +45,13 @@ public class UnitConversionTests
     [InlineData("1 kg to grams", 1000, 0.01)]
     [InlineData("100 cm to meters", 1, 0.01)]
     [InlineData("1 tonne to kg", 1000, 0.01)]
+    [InlineData("8 min/mi to mph", 7.5, 0.01)]
+    [InlineData("9:30 min/mi to mph", 6.316, 0.01)]
+    [InlineData("8 min/mi to km/h", 12.070, 0.01)]
+    [InlineData("8 min/mi to min/km", 4.971, 0.01)]
+    [InlineData("5 min/km to km/h", 12, 0.01)]
+    [InlineData("12 km/hr to min/km", 5, 0.01)]
+    [InlineData("6 mph to min/mi", 10, 0.01)]
     public async Task ExplicitConversion_CorrectNumericValue(string input, double expectedValue, double tolerance)
     {
         CalculationResult result = await _service.EvaluateExpressionsAsync(input);
@@ -70,6 +81,31 @@ public class UnitConversionTests
         Assert.Equal(0, result.ErrorCount);
         Assert.Single(result.OutputNumbers);
         Assert.InRange(result.OutputNumbers[0], 18.9, 18.95);
+    }
+
+    [Theory]
+    [InlineData("3.6 years to days", "days", 1314.9, 0.01)]
+    [InlineData("48 hours in days", "days", 2, 0.001)]
+    [InlineData("90 minutes to hours", "hours", 1.5, 0.001)]
+    public async Task DurationConversion_ExplicitSyntax_Works(string input, string expectedUnit, double expectedValue, double tolerance)
+    {
+        CalculationResult result = await _service.EvaluateExpressionsAsync(input);
+
+        Assert.Contains(expectedUnit, result.Output);
+        Assert.Single(result.OutputNumbers);
+        Assert.InRange(result.OutputNumbers[0], expectedValue - tolerance, expectedValue + tolerance);
+        Assert.Equal(0, result.ErrorCount);
+    }
+
+    [Fact]
+    public async Task DurationConversion_UsesFixedAverageMonthLength()
+    {
+        CalculationResult result = await _service.EvaluateExpressionsAsync("1 month to days");
+
+        Assert.Equal("30.44 days", result.Output);
+        Assert.Single(result.OutputNumbers);
+        Assert.Equal(30.44, result.OutputNumbers[0], 2);
+        Assert.Equal(0, result.ErrorCount);
     }
 
     [Fact]
@@ -138,6 +174,35 @@ public class UnitConversionTests
         Assert.Equal(3, result.OutputNumbers.Count);
         // 1 mile → 1.609 km → 1609.34 m
         Assert.InRange(result.OutputNumbers[2], 1609, 1610);
+    }
+
+    [Fact]
+    public async Task ContinuationConversion_PaceToSpeed()
+    {
+        string input = "8 min/mi\nto km/h";
+        CalculationResult result = await _service.EvaluateExpressionsAsync(input);
+
+        string[] lines = result.Output.Split('\n');
+        Assert.Equal(2, lines.Length);
+        Assert.Contains("min/mi", lines[0]);
+        Assert.Contains("km/h", lines[1]);
+        Assert.Equal(2, result.OutputNumbers.Count);
+        Assert.InRange(result.OutputNumbers[1], 12.06, 12.08);
+    }
+
+    [Fact]
+    public async Task ContinuationConversion_PaceTimeToSpeed()
+    {
+        string input = "9:30 min/mi\nto mph";
+        CalculationResult result = await _service.EvaluateExpressionsAsync(input);
+
+        string[] lines = result.Output.Split('\n');
+        Assert.Equal(2, lines.Length);
+        Assert.Contains("min/mi", lines[0]);
+        Assert.Contains("mph", lines[1]);
+        Assert.Equal(2, result.OutputNumbers.Count);
+        Assert.Equal(9.5, result.OutputNumbers[0], 3);
+        Assert.InRange(result.OutputNumbers[1], 6.30, 6.32);
     }
 
     #endregion Continuation Conversion Tests
@@ -221,6 +286,9 @@ public class UnitConversionTests
     [InlineData("3.5 gallons", "gal")]
     [InlineData("10 miles", "mi")]
     [InlineData("25 mph", "mph")]
+    [InlineData("8 min/mi", "min/mi")]
+    [InlineData("9:30 min/mi", "min/mi")]
+    [InlineData("5 min/km", "min/km")]
     public async Task StandaloneUnit_DetectedAndDisplayed(string input, string expectedAbbrev)
     {
         CalculationResult result = await _service.EvaluateExpressionsAsync(input);
@@ -234,6 +302,8 @@ public class UnitConversionTests
     [InlineData("5 meters", 5)]
     [InlineData("100 kg", 100)]
     [InlineData("3.5 gallons", 3.5)]
+    [InlineData("8 min/mi", 8)]
+    [InlineData("9:30 min/mi", 9.5)]
     public async Task StandaloneUnit_CorrectNumericValue(string input, double expected)
     {
         CalculationResult result = await _service.EvaluateExpressionsAsync(input);
@@ -277,6 +347,10 @@ public class UnitConversionTests
     [InlineData("100 km/h to mph", "mph")]
     [InlineData("1 m/s to km/h", "km/h")]
     [InlineData("1 knot to mph", "mph")]
+    [InlineData("8 min/mi to mph", "mph")]
+    [InlineData("5 min/km to km/hr", "km/h")]
+    [InlineData("10 km/h to min/km", "min/km")]
+    [InlineData("6 mph to min/mi", "min/mi")]
     // Area
     [InlineData("1 acre to sq m", "m²")]
     [InlineData("1 hectare to acres", "ac")]
@@ -374,6 +448,7 @@ public class UnitConversionTests
     [InlineData("100 fahrenheit to celsius", true)]
     [InlineData("100 F to C", true)]
     [InlineData("32 C to F", true)]
+    [InlineData("8 min/mi to mph", true)]
     [InlineData("2 + 3", false)]
     [InlineData("hello world", false)]
     [InlineData("x = 10", false)]

@@ -49,6 +49,8 @@ public partial class EditTextWindowSettings : Page
         EtwShowRegexPatternCheckBox.IsChecked = DefaultSettings.EtwShowRegexPattern;
         EtwShowSimilarMatchesCheckBox.IsChecked = DefaultSettings.EtwShowSimilarMatches;
 
+        EtwNormalizeLineEndingsOnPasteCheckBox.IsChecked = DefaultSettings.EtwNormalizeLineEndingsOnPaste;
+
         // Calculator
         CalcShowPaneCheckBox.IsChecked = DefaultSettings.CalcShowPane;
         CalcShowErrorsCheckBox.IsChecked = DefaultSettings.CalcShowErrors;
@@ -182,6 +184,13 @@ public partial class EditTextWindowSettings : Page
     {
         if (!_loaded) return;
         DefaultSettings.EtwShowSimilarMatches = EtwShowSimilarMatchesCheckBox.IsChecked == true;
+        DefaultSettings.Save();
+    }
+
+    private void EtwNormalizeLineEndingsOnPasteCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded) return;
+        DefaultSettings.EtwNormalizeLineEndingsOnPaste = EtwNormalizeLineEndingsOnPasteCheckBox.IsChecked == true;
         DefaultSettings.Save();
     }
 

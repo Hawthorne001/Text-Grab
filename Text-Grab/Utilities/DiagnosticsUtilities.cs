@@ -161,6 +161,7 @@ public static class DiagnosticsUtilities
             // OCR / error correction
             CorrectErrors = s.CorrectErrors,
             CorrectToLatin = s.CorrectToLatin,
+            ParagraphDetection = s.ParagraphDetection,
             TryToReadBarcodes = s.TryToReadBarcodes,
             UseTesseract = s.UseTesseract,
             TesseractPathConfigured = !string.IsNullOrWhiteSpace(s.TesseractPath),
@@ -192,6 +193,7 @@ public static class DiagnosticsUtilities
             GrabFrameUpdateEtw = s.GrabFrameUpdateEtw,
             GrabFrameScrollBehavior = s.GrabFrameScrollBehavior ?? string.Empty,
             GrabFrameReadBarcodes = s.GrabFrameReadBarcodes,
+            GrabFrameWordGrouping = s.GrabFrameWordGrouping ?? string.Empty,
             GrabFrameTranslationEnabled = s.GrabFrameTranslationEnabled,
             GrabFrameTranslationLanguage = s.GrabFrameTranslationLanguage ?? string.Empty,
 
@@ -246,7 +248,7 @@ public static class DiagnosticsUtilities
             SettingsService svc = AppUtilities.TextGrabSettingsService;
 
             StoredRegex[] regexes = svc.LoadStoredRegexes();
-            StoredRegex[] customRegexes = regexes.Where(r => !r.IsDefault).ToArray();
+            StoredRegex[] customRegexes = [.. regexes.Where(r => !r.IsDefault)];
 
             List<Models.ButtonInfo> postGrabActions = svc.LoadPostGrabActions();
             Dictionary<string, bool> postGrabCheckStates = svc.LoadPostGrabCheckStates();
@@ -508,6 +510,7 @@ public class SettingsInfoModel
     // OCR / error correction
     public bool CorrectErrors { get; set; }
     public bool CorrectToLatin { get; set; }
+    public bool ParagraphDetection { get; set; }
     public bool TryToReadBarcodes { get; set; }
     public bool UseTesseract { get; set; }
     public bool TesseractPathConfigured { get; set; }  // true/false only — full path is PII
@@ -539,6 +542,7 @@ public class SettingsInfoModel
     public bool GrabFrameUpdateEtw { get; set; }
     public string GrabFrameScrollBehavior { get; set; } = string.Empty;
     public bool GrabFrameReadBarcodes { get; set; }
+    public string GrabFrameWordGrouping { get; set; } = string.Empty;
     public bool GrabFrameTranslationEnabled { get; set; }
     public string GrabFrameTranslationLanguage { get; set; } = string.Empty;
 

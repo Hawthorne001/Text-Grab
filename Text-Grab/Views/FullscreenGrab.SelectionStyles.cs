@@ -1190,7 +1190,7 @@ public partial class FullscreenGrab
 
             if (!isWebSearch)
             {
-                EditTextWindow etw = WindowUtilities.OpenOrActivateWindow<EditTextWindow>();
+                EditTextWindow etw = WindowUtilities.OpenOrActivateEditTextWindow(isTable);
                 destinationTextBox = etw.PassedTextControl;
             }
         }
