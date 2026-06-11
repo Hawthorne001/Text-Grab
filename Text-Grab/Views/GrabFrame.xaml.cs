@@ -1430,9 +1430,6 @@ public partial class GrabFrame : Window
 
     public void MergeSelectedWordBorders()
     {
-        if (TableToggleButton.IsChecked is true)
-            return;
-
         ShouldSaveOnClose = true;
         RectanglesCanvas.ContextMenu.IsOpen = false;
         if (!IsFreezeMode)
@@ -1721,9 +1718,7 @@ public partial class GrabFrame : Window
 
     private void CanExecuteMergeWordBorders(object sender, CanExecuteRoutedEventArgs e)
     {
-        e.CanExecute = ShouldAllowWordBorderMerging(
-            TableToggleButton.IsChecked is true,
-            SelectedWordBorders().Count);
+        e.CanExecute = ShouldAllowWordBorderMerging(SelectedWordBorders().Count);
     }
 
     private void CanPasteExecute(object sender, CanExecuteRoutedEventArgs e)
@@ -4733,9 +4728,9 @@ new GrabFrameOperationArgs()
             && OcrUtilities.ShouldUseParagraphDetection(isSpaceJoining, TableToggleButton.IsChecked is true);
     }
 
-    internal static bool ShouldAllowWordBorderMerging(bool isTableModeSelected, int selectedWordBorderCount)
+    internal static bool ShouldAllowWordBorderMerging(int selectedWordBorderCount)
     {
-        return !isTableModeSelected && selectedWordBorderCount > 1;
+        return selectedWordBorderCount > 1;
     }
 
     internal static bool ShouldRefreshOcrBordersForTableModeActivation(
