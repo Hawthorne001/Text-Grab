@@ -11,7 +11,7 @@ public class CalculatorTests
     public async Task NCalc_HasBuiltInPi_ReturnsFalse()
     {
         // Test if NCalc has built-in Pi constant
-        AsyncExpression expression = new("Pi");
+        Expression expression = new("Pi");
 
         NCalcParameterNotDefinedException exception = await Assert.ThrowsAsync<NCalcParameterNotDefinedException>(async () => await expression.EvaluateAsync(TestContext.Current.CancellationToken));
         Assert.Contains("Pi", exception.Message);
@@ -21,7 +21,7 @@ public class CalculatorTests
     public async Task NCalc_HasBuiltInE_ReturnsFalse()
     {
         // Test if NCalc has built-in E constant
-        AsyncExpression expression = new("E");
+        Expression expression = new("E");
 
         NCalcParameterNotDefinedException exception = await Assert.ThrowsAsync<NCalcParameterNotDefinedException>(async () => await expression.EvaluateAsync(TestContext.Current.CancellationToken));
         Assert.Contains("E", exception.Message);
@@ -44,16 +44,15 @@ public class CalculatorTests
 
         foreach ((string? expr, double expected) in tests)
         {
-            AsyncExpression expression = new(expr);
+            Expression expression = new(expr);
 
             // Add E parameter for the Log test
             if (expr.Contains('E'))
             {
-                expression.EvaluateParameterAsync += (name, args) =>
+                expression.EvaluateParameter += (name, args) =>
                 {
                     if (name == "E")
                         args.Result = Math.E;
-                    return ValueTask.CompletedTask;
                 };
             }
 
@@ -67,12 +66,11 @@ public class CalculatorTests
     public async Task NCalc_WithCustomPiParameter_Works()
     {
         // Test that we can add Pi as a parameter
-        AsyncExpression expression = new("Sin(Pi/2)");
-        expression.EvaluateParameterAsync += (name, args) =>
+        Expression expression = new("Sin(Pi/2)");
+        expression.EvaluateParameter += (name, args) =>
         {
             if (name == "Pi")
                 args.Result = Math.PI;
-            return ValueTask.CompletedTask;
         };
 
         double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
@@ -84,12 +82,11 @@ public class CalculatorTests
     public async Task NCalc_WithCustomEParameter_Works()
     {
         // Test that we can add E as a parameter
-        AsyncExpression expression = new("Log(E, E)"); // Log(value, base) format
-        expression.EvaluateParameterAsync += (name, args) =>
+        Expression expression = new("Log(E, E)"); // Log(value, base) format
+        expression.EvaluateParameter += (name, args) =>
         {
             if (name == "E")
                 args.Result = Math.E;
-            return ValueTask.CompletedTask;
         };
 
         double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
@@ -101,8 +98,8 @@ public class CalculatorTests
     public async Task NCalc_WithMultipleMathConstants_Works()
     {
         // Test multiple math constants together
-        AsyncExpression expression = new("Pi * E");
-        expression.EvaluateParameterAsync += (name, args) =>
+        Expression expression = new("Pi * E");
+        expression.EvaluateParameter += (name, args) =>
         {
             args.Result = name switch
             {
@@ -110,7 +107,6 @@ public class CalculatorTests
                 "E" => Math.E,
                 _ => throw new ArgumentException($"Unknown parameter: {name}")
             };
-            return ValueTask.CompletedTask;
         };
 
         double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
@@ -141,12 +137,11 @@ public class CalculatorTests
     public async Task NCalc_WithTauConstant_Works()
     {
         // Test that we can use Tau (2*Pi)
-        AsyncExpression expression = new("Tau/2");
-        expression.EvaluateParameterAsync += (name, args) =>
+        Expression expression = new("Tau/2");
+        expression.EvaluateParameter += (name, args) =>
         {
             if (name == "Tau")
                 args.Result = Math.Tau;
-            return ValueTask.CompletedTask;
         };
 
         double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
@@ -172,8 +167,8 @@ public class CalculatorTests
 
         foreach ((string? constantName, double expectedValue) in testCases)
         {
-            AsyncExpression expression = new(constantName, ExpressionOptions.IgnoreCaseAtBuiltInFunctions);
-            expression.EvaluateParameterAsync += (name, args) =>
+            Expression expression = new(constantName, ExpressionOptions.IgnoreCaseAtBuiltInFunctions);
+            expression.EvaluateParameter += (name, args) =>
             {
                 args.Result = name.ToLower() switch
                 {
@@ -182,7 +177,6 @@ public class CalculatorTests
                     "tau" => Math.Tau,
                     _ => throw new ArgumentException($"Unknown parameter: {name}")
                 };
-                return ValueTask.CompletedTask;
             };
 
             double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
@@ -195,8 +189,8 @@ public class CalculatorTests
     public async Task NCalc_ComplexMathExpression_WithConstants()
     {
         // Test complex expression using multiple constants
-        AsyncExpression expression = new("Sin(Pi/6) + Cos(Pi/3) + Log(E, E)"); // Using Log(value, base)
-        expression.EvaluateParameterAsync += (name, args) =>
+        Expression expression = new("Sin(Pi/6) + Cos(Pi/3) + Log(E, E)"); // Using Log(value, base)
+        expression.EvaluateParameter += (name, args) =>
         {
             args.Result = name switch
             {
@@ -204,7 +198,6 @@ public class CalculatorTests
                 "E" => Math.E,
                 _ => throw new ArgumentException($"Unknown parameter: {name}")
             };
-            return ValueTask.CompletedTask;
         };
 
         double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
@@ -217,9 +210,9 @@ public class CalculatorTests
     public async Task AsyncNCalc_WithMathConstants_Works()
     {
         // Test async version with constants
-        AsyncExpression expression = new("Sqrt(Pi * E)", ExpressionOptions.IgnoreCaseAtBuiltInFunctions);
+        Expression expression = new("Sqrt(Pi * E)", ExpressionOptions.IgnoreCaseAtBuiltInFunctions);
 
-        expression.EvaluateParameterAsync += (name, args) =>
+        expression.EvaluateParameter += (name, args) =>
         {
             args.Result = name.ToLower() switch
             {
@@ -227,7 +220,6 @@ public class CalculatorTests
                 "e" => Math.E,
                 _ => throw new ArgumentException($"Unknown parameter: {name}")
             };
-            return ValueTask.CompletedTask;
         };
 
         double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));
@@ -247,9 +239,9 @@ public class CalculatorTests
     public async Task MathConstants_Integration_Test(string constantName, double expectedValue)
     {
         // Test the TryGetMathConstant method logic using realistic expressions
-        AsyncExpression expression = new(constantName, ExpressionOptions.IgnoreCaseAtBuiltInFunctions);
+        Expression expression = new(constantName, ExpressionOptions.IgnoreCaseAtBuiltInFunctions);
 
-        expression.EvaluateParameterAsync += (name, args) =>
+        expression.EvaluateParameter += (name, args) =>
         {
             // Simulate the TryGetMathConstant logic
             double value = name.ToLowerInvariant() switch
@@ -270,8 +262,6 @@ public class CalculatorTests
 
             if (!double.IsNaN(value))
                 args.Result = value;
-
-            return ValueTask.CompletedTask;
         };
 
         double result = Convert.ToDouble(await expression.EvaluateAsync(TestContext.Current.CancellationToken));

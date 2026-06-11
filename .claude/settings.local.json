@@ -23,7 +23,9 @@
       "Bash(Get-ChildItem -Path \"D:/source/TheJoeFin/Text-Grab/Text-Grab/\" -Directory)",
       "Bash(Select-Object Name)",
       "PowerShell(dotnet build *)",
-      "PowerShell(dotnet test *)"
+      "PowerShell(dotnet test *)",
+      "PowerShell(Get-ChildItem *)",
+      "WebFetch(domain:raw.githubusercontent.com)"
     ],
     "deny": []
   }

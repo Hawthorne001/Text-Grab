@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
+using Text_Grab.Controls;
 using Text_Grab.Extensions;
 using Text_Grab.Interfaces;
 using Text_Grab.Models;
@@ -1029,6 +1030,27 @@ public partial class FullscreenGrab
             return;
         }
 
+        // Show a loading indicator over the grabbed region while OCR and any
+        // post-grab actions run, then flash a success icon once text is handled.
+        PreviousGrabWindow grabIndicator = new(GetHistoryPositionRect(selection), PreviousGrabIndicator.Loading);
+        grabIndicator.Show();
+
+        bool grabbedText = false;
+        try
+        {
+            grabbedText = await CommitSelectionCoreAsync(selection, isSmallClick);
+        }
+        finally
+        {
+            if (grabbedText)
+                grabIndicator.ShowSuccess();
+            else
+                grabIndicator.Close();
+        }
+    }
+
+    private async Task<bool> CommitSelectionCoreAsync(FullscreenCaptureResult selection, bool isSmallClick)
+    {
         if (LanguagesComboBox.SelectedItem is not ILanguage selectedOcrLang)
             selectedOcrLang = LanguageUtilities.GetOCRLanguage();
 
@@ -1113,7 +1135,7 @@ public partial class FullscreenGrab
             else
                 ResetSelectionVisualState();
 
-            return;
+            return false;
         }
 
         if (NextStepDropDownButton.Flyout is ContextMenu contextMenu)
@@ -1201,6 +1223,7 @@ public partial class FullscreenGrab
             isTable,
             destinationTextBox);
         WindowUtilities.CloseAllFullscreenGrabs();
+        return true;
     }
 
     private async void AcceptSelectionButton_Click(object sender, RoutedEventArgs e)

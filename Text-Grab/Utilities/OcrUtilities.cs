@@ -301,31 +301,40 @@ public static partial class OcrUtilities
 
         Rect scaledRect = lastFsg.PositionRect.GetScaledUpByFraction(lastFsg.DpiScaleFactor);
 
-        PreviousGrabWindow previousGrab = new(lastFsg.PositionRect);
+        PreviousGrabWindow previousGrab = new(lastFsg.PositionRect, PreviousGrabIndicator.Loading);
         previousGrab.Show();
 
-        ILanguage language = lastFsg.OcrLanguage ?? LanguageUtilities.GetCurrentInputLanguage();
-        string grabbedText = await GetTextFromAbsoluteRectAsync(scaledRect, language);
-        (string languageTag, LanguageKind languageKind, bool usedUiAutomation) =
-            LanguageUtilities.GetPersistedLanguageIdentity(language);
-
-        HistoryInfo newPrevRegionHistory = new()
+        try
         {
-            ID = Guid.NewGuid().ToString(),
-            CaptureDateTime = DateTimeOffset.Now,
-            ImageContent = Singleton<HistoryService>.Instance.CachedBitmap,
-            TextContent = grabbedText,
-            PositionRect = lastFsg.PositionRect,
-            LanguageTag = languageTag,
-            LanguageKind = languageKind,
-            UsedUiAutomation = usedUiAutomation,
-            IsTable = lastFsg.IsTable,
-            SourceMode = TextGrabMode.Fullscreen,
-            DpiScaleFactor = lastFsg.DpiScaleFactor,
-        };
-        Singleton<HistoryService>.Instance.SaveToHistory(newPrevRegionHistory);
+            ILanguage language = lastFsg.OcrLanguage ?? LanguageUtilities.GetCurrentInputLanguage();
+            string grabbedText = await GetTextFromAbsoluteRectAsync(scaledRect, language);
+            (string languageTag, LanguageKind languageKind, bool usedUiAutomation) =
+                LanguageUtilities.GetPersistedLanguageIdentity(language);
 
-        OutputUtilities.HandleTextFromOcr(grabbedText, false, lastFsg.IsTable, null);
+            HistoryInfo newPrevRegionHistory = new()
+            {
+                ID = Guid.NewGuid().ToString(),
+                CaptureDateTime = DateTimeOffset.Now,
+                ImageContent = Singleton<HistoryService>.Instance.CachedBitmap,
+                TextContent = grabbedText,
+                PositionRect = lastFsg.PositionRect,
+                LanguageTag = languageTag,
+                LanguageKind = languageKind,
+                UsedUiAutomation = usedUiAutomation,
+                IsTable = lastFsg.IsTable,
+                SourceMode = TextGrabMode.Fullscreen,
+                DpiScaleFactor = lastFsg.DpiScaleFactor,
+            };
+            Singleton<HistoryService>.Instance.SaveToHistory(newPrevRegionHistory);
+
+            OutputUtilities.HandleTextFromOcr(grabbedText, false, lastFsg.IsTable, null);
+            previousGrab.ShowSuccess();
+        }
+        catch
+        {
+            previousGrab.Close();
+            throw;
+        }
     }
 
     public static async Task GetTextFromPreviousFullscreenRegion(TextBox? destinationTextBox = null)
@@ -340,31 +349,40 @@ public static partial class OcrUtilities
 
         Rect scaledRect = lastFsg.PositionRect.GetScaledUpByFraction(lastFsg.DpiScaleFactor);
 
-        PreviousGrabWindow previousGrab = new(lastFsg.PositionRect);
+        PreviousGrabWindow previousGrab = new(lastFsg.PositionRect, PreviousGrabIndicator.Loading);
         previousGrab.Show();
 
-        ILanguage language = lastFsg.OcrLanguage ?? LanguageUtilities.GetCurrentInputLanguage();
-        string grabbedText = await GetTextFromAbsoluteRectAsync(scaledRect, language);
-        (string languageTag, LanguageKind languageKind, bool usedUiAutomation) =
-            LanguageUtilities.GetPersistedLanguageIdentity(language);
-
-        HistoryInfo newPrevRegionHistory = new()
+        try
         {
-            ID = Guid.NewGuid().ToString(),
-            CaptureDateTime = DateTimeOffset.Now,
-            ImageContent = Singleton<HistoryService>.Instance.CachedBitmap,
-            TextContent = grabbedText,
-            PositionRect = lastFsg.PositionRect,
-            LanguageTag = languageTag,
-            LanguageKind = languageKind,
-            UsedUiAutomation = usedUiAutomation,
-            IsTable = lastFsg.IsTable,
-            SourceMode = TextGrabMode.Fullscreen,
-            DpiScaleFactor = lastFsg.DpiScaleFactor,
-        };
-        Singleton<HistoryService>.Instance.SaveToHistory(newPrevRegionHistory);
+            ILanguage language = lastFsg.OcrLanguage ?? LanguageUtilities.GetCurrentInputLanguage();
+            string grabbedText = await GetTextFromAbsoluteRectAsync(scaledRect, language);
+            (string languageTag, LanguageKind languageKind, bool usedUiAutomation) =
+                LanguageUtilities.GetPersistedLanguageIdentity(language);
 
-        OutputUtilities.HandleTextFromOcr(grabbedText, false, lastFsg.IsTable, destinationTextBox);
+            HistoryInfo newPrevRegionHistory = new()
+            {
+                ID = Guid.NewGuid().ToString(),
+                CaptureDateTime = DateTimeOffset.Now,
+                ImageContent = Singleton<HistoryService>.Instance.CachedBitmap,
+                TextContent = grabbedText,
+                PositionRect = lastFsg.PositionRect,
+                LanguageTag = languageTag,
+                LanguageKind = languageKind,
+                UsedUiAutomation = usedUiAutomation,
+                IsTable = lastFsg.IsTable,
+                SourceMode = TextGrabMode.Fullscreen,
+                DpiScaleFactor = lastFsg.DpiScaleFactor,
+            };
+            Singleton<HistoryService>.Instance.SaveToHistory(newPrevRegionHistory);
+
+            OutputUtilities.HandleTextFromOcr(grabbedText, false, lastFsg.IsTable, destinationTextBox);
+            previousGrab.ShowSuccess();
+        }
+        catch
+        {
+            previousGrab.Close();
+            throw;
+        }
     }
 
     public static async Task<List<OcrOutput>> GetTextFromRandomAccessStream(IRandomAccessStream randomAccessStream, ILanguage language)
