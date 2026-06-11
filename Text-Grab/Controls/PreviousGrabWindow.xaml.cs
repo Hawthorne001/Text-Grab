@@ -24,7 +24,7 @@ public enum PreviousGrabIndicator
 /// </summary>
 public partial class PreviousGrabWindow : Window
 {
-    private static readonly TimeSpan flashDuration = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan flashDuration = TimeSpan.FromMilliseconds(300);
 
     public PreviousGrabWindow(Rect rect, PreviousGrabIndicator indicator = PreviousGrabIndicator.None)
     {
@@ -65,8 +65,10 @@ public partial class PreviousGrabWindow : Window
 
     private void CloseAfterDelay()
     {
-        DispatcherTimer timer = new();
-        timer.Interval = flashDuration;
+        DispatcherTimer timer = new()
+        {
+            Interval = flashDuration
+        };
         timer.Tick += (s, e) => { timer.Stop(); Close(); };
         timer.Start();
     }
