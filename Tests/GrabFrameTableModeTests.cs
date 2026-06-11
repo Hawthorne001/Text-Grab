@@ -6,17 +6,14 @@ namespace Tests;
 public class GrabFrameTableModeTests
 {
     [Theory]
-    [InlineData(false, 2, true)]
-    [InlineData(false, 1, false)]
-    [InlineData(true, 2, false)]
-    public void ShouldAllowWordBorderMerging_DisablesMergingInTableMode(
-        bool isTableModeSelected,
+    [InlineData(2, true)]
+    [InlineData(1, false)]
+    [InlineData(0, false)]
+    public void ShouldAllowWordBorderMerging_RequiresMultipleSelectedWordBorders(
         int selectedWordBorderCount,
         bool expected)
     {
-        bool actual = GrabFrame.ShouldAllowWordBorderMerging(
-            isTableModeSelected,
-            selectedWordBorderCount);
+        bool actual = GrabFrame.ShouldAllowWordBorderMerging(selectedWordBorderCount);
 
         Assert.Equal(expected, actual);
     }
