@@ -96,6 +96,13 @@
 		</uap3:FileTypeAssociation>
 	  </uap3:Extension>
 
+	  <!-- text-grab:// protocol (used by the Text Grab browser extension) -->
+	  <uap:Extension Category="windows.protocol">
+		<uap:Protocol Name="text-grab">
+		  <uap:DisplayName>Text Grab</uap:DisplayName>
+		</uap:Protocol>
+	  </uap:Extension>
+
 	  <!-- Share target integration -->
 	  <uap:Extension Category="windows.shareTarget">
 		<uap:ShareTarget Description="Grab text from shared content">

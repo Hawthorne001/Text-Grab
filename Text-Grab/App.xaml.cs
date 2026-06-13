@@ -294,6 +294,12 @@ public partial class App : System.Windows.Application
 
     private static async Task<bool> HandleStartupArgs(string[] args)
     {
+        // text-grab:// protocol activation (e.g. from the Text Grab browser
+        // extension); short-circuit before any file-path probing of arguments.
+        foreach (string arg in args)
+            if (ProtocolUtilities.IsProtocolUri(arg))
+                return HandleProtocolUri(arg);
+
         StartupArguments startupArguments = ParseStartupArguments(args);
 
         if (startupArguments.IsQuiet)
@@ -348,6 +354,108 @@ public partial class App : System.Windows.Application
             return true;
 
         return await CheckForOcringFolder(currentArgument);
+    }
+
+    internal static bool HandleProtocolUri(string uriString)
+    {
+        if (!ProtocolUtilities.TryParseProtocolUri(uriString, out string command, out Dictionary<string, string> parameters))
+            return false;
+
+        switch (command)
+        {
+            case "paste-spreadsheet":
+                {
+                    EditTextWindow etw = new();
+                    etw.Show();
+                    etw.EnterSpreadsheetMode();
+                    // Defer the paste until the window has loaded so the
+                    // spreadsheet grid is ready to receive the clipboard table.
+                    etw.Dispatcher.InvokeAsync(
+                        etw.PasteClipboardIntoSpreadsheet,
+                        DispatcherPriority.Loaded);
+                    etw.Activate();
+                    return true;
+                }
+            case "edit-text":
+                {
+                    EditTextWindow etw = new();
+                    try
+                    {
+                        string clipboardText = Clipboard.GetText();
+                        if (!string.IsNullOrEmpty(clipboardText))
+                            etw.AddThisText(clipboardText);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"edit-text protocol: clipboard read failed. {ex.Message}");
+                    }
+                    etw.Show();
+                    etw.Activate();
+                    return true;
+                }
+            case "grab-frame":
+                {
+                    if (parameters.TryGetValue("path", out string? path)
+                        && File.Exists(path)
+                        && IoUtilities.IsVisualDocumentFile(path))
+                    {
+                        GrabFrame gfWithFile = new(path);
+                        gfWithFile.Show();
+                        gfWithFile.Activate();
+                        return true;
+                    }
+
+                    GrabFrame gf = new();
+                    gf.Show();
+                    gf.Activate();
+                    return true;
+                }
+            case "grab-text":
+                {
+                    // OCR a local image/PDF straight to the clipboard, no window.
+                    if (parameters.TryGetValue("path", out string? path)
+                        && File.Exists(path)
+                        && IoUtilities.IsVisualDocumentFile(path))
+                    {
+                        _ = GrabTextFromFileAsync(path);
+                        return true;
+                    }
+                    return false;
+                }
+            case "fullscreen":
+                LaunchStandardMode(TextGrabMode.Fullscreen);
+                return true;
+            case "quick-lookup":
+                LaunchStandardMode(TextGrabMode.QuickLookup);
+                return true;
+            case "settings":
+                {
+                    SettingsWindow sw = new();
+                    sw.Show();
+                    return true;
+                }
+            default:
+                Debug.WriteLine($"Unknown text-grab:// command: {command}");
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// OCRs a local image/PDF file and routes the result to the clipboard (and
+    /// a toast), the same handling as a normal grab. Used by text-grab://grab-text.
+    /// </summary>
+    private static async Task GrabTextFromFileAsync(string path)
+    {
+        try
+        {
+            string ocrText = await OcrUtilities.OcrAbsoluteFilePathAsync(
+                path, LanguageUtilities.GetOCRLanguage());
+            OutputUtilities.HandleTextFromOcr(ocrText, isSingleLine: false, isTable: false);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"grab-text protocol: OCR failed. {ex.Message}");
+        }
     }
 
     private static void LaunchStandardMode(TextGrabMode launchMode)
@@ -430,6 +538,10 @@ public partial class App : System.Windows.Application
     {
         NumberOfRunningInstances = Process.GetProcessesByName("Text-Grab").Length;
         Current.DispatcherUnhandledException += CurrentDispatcherUnhandledException;
+
+        // Per-user text-grab:// registration for unpackaged installs
+        // (packaged installs register the protocol via the MSIX manifest).
+        ProtocolUtilities.EnsureProtocolRegistration();
 
         // Register COM server and activator type
         bool handledArgument = false;
