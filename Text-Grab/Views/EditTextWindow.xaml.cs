@@ -111,6 +111,8 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private bool isShowingPendingFileClosePrompt = false;
     private bool allowCloseAfterPendingFilePrompt = false;
     private bool isRestoringSpreadsheetUndoState = false;
+    // Cached clipboard state to avoid slow COM calls on every CanExecute query
+    private bool _cachedClipboardHasOcrContent = true;
     private int? spreadsheetContextRowIndex;
     private int? spreadsheetContextColumnIndex;
     private SpreadsheetUndoState? pendingSpreadsheetUndoState;
@@ -254,6 +256,13 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     internal void EnterSpreadsheetMode() => SetEditorMode(EtwEditorMode.Spreadsheet);
+
+    /// <summary>
+    /// Pastes the clipboard into the spreadsheet editor, parsing HTML tables
+    /// (including colspan/rowspan) when present. Used by the text-grab://
+    /// paste-spreadsheet protocol activation.
+    /// </summary>
+    internal void PasteClipboardIntoSpreadsheet() => PasteIntoSpreadsheet();
 
     public async Task OcrAllImagesInFolder(string folderPath, OcrDirectoryOptions options)
     {
@@ -544,9 +553,13 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ResetSpreadsheetUndoHistory()
     {
+        bool wasNonEmpty = spreadsheetUndoHistory.CanUndo || spreadsheetUndoHistory.CanRedo;
         spreadsheetUndoHistory.Clear();
         pendingSpreadsheetUndoState = null;
-        CommandManager.InvalidateRequerySuggested();
+        // Only invalidate when the undo/redo availability actually changed to avoid
+        // triggering all CanExecute handlers on every text change in text mode.
+        if (wasNonEmpty)
+            CommandManager.InvalidateRequerySuggested();
     }
 
     private void RestoreSpreadsheetUndoState(SpreadsheetUndoState stateToRestore)
@@ -2433,35 +2446,26 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void CanOcrPasteExecute(object sender, CanExecuteRoutedEventArgs e)
     {
-        IsAccessingClipboard = true;
-        DataPackageView? dataPackageView = null;
+        // Use cached value to avoid slow COM clipboard access on every CanExecute query.
+        // The cache is updated by Clipboard_ContentChanged and on window load.
+        e.CanExecute = _cachedClipboardHasOcrContent;
+    }
 
+    private void UpdateCachedClipboardOcrState()
+    {
         try
         {
-            dataPackageView = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+            DataPackageView view = Windows.ApplicationModel.DataTransfer.Clipboard.GetContent();
+            _cachedClipboardHasOcrContent =
+                view.Contains(StandardDataFormats.Text)
+                || view.Contains(StandardDataFormats.Bitmap)
+                || view.Contains(StandardDataFormats.StorageItems);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"error with Windows.ApplicationModel.DataTransfer.Clipboard.GetContent(). Exception Message: {ex.Message}");
-            e.CanExecute = false;
+            Debug.WriteLine($"error updating clipboard OCR state: {ex.Message}");
+            _cachedClipboardHasOcrContent = true; // optimistic fallback
         }
-        finally
-        {
-            IsAccessingClipboard = false;
-        }
-
-        if (dataPackageView is null)
-        {
-            e.CanExecute = false;
-            return;
-        }
-
-        if (dataPackageView.Contains(StandardDataFormats.Text)
-            || dataPackageView.Contains(StandardDataFormats.Bitmap)
-            || dataPackageView.Contains(StandardDataFormats.StorageItems))
-            e.CanExecute = true;
-        else
-            e.CanExecute = false;
     }
 
     private void CaptureMenuItem_SubmenuOpened(object sender, RoutedEventArgs e)
@@ -2503,6 +2507,9 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private async void Clipboard_ContentChanged(object? sender, object e)
     {
+        // Always keep OCR paste cache fresh regardless of clipboard watcher state.
+        UpdateCachedClipboardOcrState();
+
         if (ClipboardWatcherMenuItem.IsChecked is false || IsAccessingClipboard)
             return;
 
@@ -3726,6 +3733,46 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             SetMargins(MarginsMenuItem.IsChecked is true);
     }
 
+    private const int SpellCheckDisableThreshold = 10_000;
+    // A "very long word" is one the spell checker will choke on (GUIDs, manifest tokens, etc.)
+    private const int SpellCheckLongWordLength = 25;
+    private const int SpellCheckLongWordCountThreshold = 3;
+
+    /// <summary>
+    /// Returns true when spell checking should be active for the given text.
+    /// Disabled for large documents and for content that contains several very long
+    /// unspaced tokens (app manifests, GUIDs, base64 blobs, etc.).
+    /// </summary>
+    internal static bool ShouldEnableSpellCheck(string text)
+    {
+        if (text.Length > SpellCheckDisableThreshold)
+            return false;
+
+        int longWordCount = 0;
+        int wordStart = -1;
+        for (int i = 0; i <= text.Length; i++)
+        {
+            bool isWordChar = i < text.Length && !char.IsWhiteSpace(text[i]);
+            if (isWordChar)
+            {
+                if (wordStart < 0)
+                    wordStart = i;
+            }
+            else if (wordStart >= 0)
+            {
+                if (i - wordStart >= SpellCheckLongWordLength)
+                {
+                    longWordCount++;
+                    if (longWordCount >= SpellCheckLongWordCountThreshold)
+                        return false;
+                }
+                wordStart = -1;
+            }
+        }
+
+        return true;
+    }
+
     private void PassedTextControl_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (DefaultSettings.EditWindowStartFullscreen && prevWindowState is not null)
@@ -3733,6 +3780,12 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             this.WindowState = prevWindowState.Value;
             prevWindowState = null;
         }
+
+        // Re-evaluate spell check eligibility on every change (the scan is O(n) but
+        // short-circuits early, so it stays fast even for large pastes).
+        bool shouldSpellCheck = ShouldEnableSpellCheck(PassedTextControl.Text);
+        if (SpellCheck.GetIsEnabled(PassedTextControl) != shouldSpellCheck)
+            SpellCheck.SetIsEnabled(PassedTextControl, shouldSpellCheck);
 
         UpdateLineAndColumnText();
 
@@ -3767,7 +3820,9 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         }
 
         ResetSpreadsheetUndoHistory();
-        RefreshSpreadsheetFromText(rebuildTable: false);
+        // Invalidate the cached document instead of eagerly re-parsing the entire text
+        // on every keystroke. It will be rebuilt lazily when switching to spreadsheet mode.
+        tableDocument = null;
         UpdatePendingFileEditState();
     }
 
@@ -4133,8 +4188,9 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ReplaceReservedCharsCmdCanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
-        e.CanExecute = GetSelectedOrAllTextSegmentsForEdit()
-            .Any(text => StringMethods.ReservedChars.Any(text.Contains));
+        // Simplified: reserved chars (spaces, punctuation) are nearly always present in
+        // any non-empty text, so scanning the full content on every CanExecute is wasteful.
+        e.CanExecute = GetSelectedOrAllTextSegmentsForEdit().Any(text => text.Length > 0);
     }
 
     private void ReplaceReservedCharsCmdExecuted(object sender, ExecutedRoutedEventArgs e)
@@ -4757,8 +4813,9 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void ToggleCaseCmdCanExecute(object sender, CanExecuteRoutedEventArgs e)
     {
-        e.CanExecute = GetSelectedOrAllTextSegmentsForEdit()
-            .Any(text => text.Any(char.IsLetter));
+        // Simplified: avoid scanning every character on each CanExecute query.
+        // Any non-empty text segment is likely to contain letters.
+        e.CanExecute = GetSelectedOrAllTextSegmentsForEdit().Any(text => text.Length > 0);
     }
 
     private void TrimEachLineMenuItem_Click(object sender, RoutedEventArgs e)
@@ -5403,6 +5460,9 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         // Initialize selectedILanguage with the last used OCR language from settings
         // This ensures that when images are dropped or pasted, the correct language is used
         selectedILanguage = LanguageUtilities.GetOCRLanguage();
+
+        // Warm up the cached clipboard OCR state so CanOcrPasteExecute is accurate immediately.
+        UpdateCachedClipboardOcrState();
 
         if (editorMode == EtwEditorMode.Spreadsheet)
             SetEditorMode(EtwEditorMode.Spreadsheet);
