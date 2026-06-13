@@ -13,6 +13,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Automation.Peers;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -65,6 +66,7 @@ public partial class GrabFrame : Window
     private bool hasLoadedImageSource = false;
     private bool IsDragOver = false;
     private bool isDrawing = false;
+    private bool isAutoOcrRedrawPass = false;
     private bool isLanguageBoxLoaded = false;
     private bool isMiddleDown = false;
     private bool IsOcrValid = false;
@@ -81,6 +83,8 @@ public partial class GrabFrame : Window
     private readonly DispatcherTimer frameMessageTimer = new();
     private readonly DispatcherTimer reDrawTimer = new();
     private readonly DispatcherTimer reSearchTimer = new();
+    private readonly DispatcherTimer contentChangeTimer = new();
+    private readonly ImageChangeDetector contentChangeDetector = new();
     private Side resizingSide = Side.None;
     private readonly Border selectBorder = new();
     private Point startingMovingPoint;
@@ -322,7 +326,6 @@ public partial class GrabFrame : Window
         history.ImageContent = bgBitmap;
         frameContentImageSource = ImageMethods.BitmapToImageSource(bgBitmap);
         hasLoadedImageSource = true;
-        GrabFrameImage.Source = frameContentImageSource;
         FreezeGrabFrame();
 
         List<WordBorderInfo> wbInfoList = await Singleton<HistoryService>.Instance.GetWordBorderInfosAsync(history);
@@ -551,6 +554,10 @@ public partial class GrabFrame : Window
 
         frameMessageTimer.Interval = TimeSpan.FromSeconds(4);
         frameMessageTimer.Tick += FrameMessageTimer_Tick;
+
+        contentChangeTimer.Interval = TimeSpan.FromSeconds(1);
+        contentChangeTimer.Tick += ContentChangeTimer_Tick;
+        contentChangeTimer.Start();
 
         _ = UndoRedo.HasUndoOperations();
         _ = UndoRedo.HasRedoOperations();
@@ -1370,6 +1377,10 @@ public partial class GrabFrame : Window
         frameMessageTimer.Stop();
         frameMessageTimer.Tick -= FrameMessageTimer_Tick;
 
+        contentChangeTimer.Stop();
+        contentChangeTimer.Tick -= ContentChangeTimer_Tick;
+        contentChangeDetector.Dispose();
+
         translationTimer.Stop();
         translationTimer.Tick -= TranslationTimer_Tick;
         translationSemaphore.Dispose();
@@ -1406,6 +1417,10 @@ public partial class GrabFrame : Window
         windowResizer?.Dispose();
         windowResizer = null;
 
+        // Release the undo/redo history; its operations hold WordBorder
+        // controls which in turn reference this window via OwnerGrabFrame.
+        UndoRedo.Reset();
+
         foreach (WordBorder wb in wordBorders)
             wb.OwnerGrabFrame = null;
         wordBorders.Clear();
@@ -1414,8 +1429,9 @@ public partial class GrabFrame : Window
         _loadedPdfDocument = null;
         _currentPdfPageContent = null;
 
-        frameContentImageSource = null;
         GrabFrameImage.Source = null;
+        GrabFrameImage.UpdateLayout();
+        frameContentImageSource = null;
         ocrResultOfWindow = null;
         frozenUiAutomationSnapshot = null;
         liveUiAutomationSnapshot = null;
@@ -1426,6 +1442,20 @@ public partial class GrabFrame : Window
         originalTexts.Clear();
         pdfTextLineOverlays.Clear();
         RectanglesCanvas.Children.Clear();
+
+        // Drop any stale automation peers so a connected UIA client cannot
+        // keep this closed window's visual tree alive.
+        ResetAutomationPeerChildrenCache(RectanglesCanvas);
+        ResetAutomationPeerChildrenCache(this);
+    }
+
+    private void DisposePreviousFrameContent()
+    {
+        if (GrabFrameImage.Source is null)
+            return;
+
+        GrabFrameImage.Source = null;
+        GrabFrameImage.UpdateLayout();
     }
 
     public void MergeSelectedWordBorders()
@@ -1928,12 +1958,25 @@ public partial class GrabFrame : Window
         RectanglesCanvas.Children.Clear();
         wordBorders.Clear();
         ClearRenderedPdfTextLines();
+
+        // When a UIA client (Narrator, touch keyboard, etc.) is connected,
+        // WPF caches automation peers per element; without a reset the stale
+        // peers keep every discarded WordBorder — and through OwnerGrabFrame,
+        // this window — reachable until the client re-walks the tree.
+        ResetAutomationPeerChildrenCache(RectanglesCanvas);
+    }
+
+    private static void ResetAutomationPeerChildrenCache(UIElement element)
+    {
+        if (UIElementAutomationPeer.FromElement(element) is AutomationPeer peer)
+            peer.ResetChildrenCache();
     }
 
     private void ClearRenderedPdfTextLines()
     {
         PdfTextCanvas.Children.Clear();
         pdfTextLineOverlays.Clear();
+        ResetAutomationPeerChildrenCache(PdfTextCanvas);
     }
 
     private IReadOnlyCollection<IntPtr>? GetUiAutomationExcludedHandles()
@@ -2177,6 +2220,9 @@ public partial class GrabFrame : Window
         wordBorders.Add(wordBorderBox);
         _ = RectanglesCanvas.Children.Add(wordBorderBox);
 
+        if (isAutoOcrRedrawPass)
+            return;
+
         UndoRedo.InsertUndoRedoOperation(UndoRedoOperation.AddWordBorder,
             new GrabFrameOperationArgs()
             {
@@ -2209,11 +2255,17 @@ public partial class GrabFrame : Window
         _ = PdfTextCanvas.Children.Add(overlay);
     }
 
-    private Task DrawRectanglesAroundWords(string searchWord = "")
+    private async Task DrawRectanglesAroundWords(string searchWord = "")
     {
-        return CurrentLanguage is UiAutomationLang
-            ? DrawUiAutomationRectanglesAsync(searchWord)
-            : DrawOcrRectanglesAsync(searchWord);
+        if (CurrentLanguage is UiAutomationLang)
+            await DrawUiAutomationRectanglesAsync(searchWord);
+        else
+            await DrawOcrRectanglesAsync(searchWord);
+
+        // The overlay just changed; rebase the change detector so the newly
+        // drawn word borders become part of the baseline instead of being
+        // judged as screen-content changes that re-trigger a refresh.
+        contentChangeDetector.Reset();
     }
 
     private async Task DrawOcrRectanglesAsync(string searchWord = "")
@@ -2642,6 +2694,7 @@ public partial class GrabFrame : Window
 
     private void FreezeGrabFrame()
     {
+        DisposePreviousFrameContent();
         GrabFrameImage.Opacity = 1;
         if (frameContentImageSource is not null)
             GrabFrameImage.Source = frameContentImageSource;
@@ -3600,7 +3653,90 @@ public partial class GrabFrame : Window
             return;
 
         if (SearchBox.Text is string searchText)
-            await DrawRectanglesAroundWords(searchText);
+        {
+            // Timer-driven redraws are not user actions, so the word borders
+            // they render must not be recorded in the undo stack; recording
+            // them pinned every rendered border for the life of the frame.
+            isAutoOcrRedrawPass = true;
+            try
+            {
+                await DrawRectanglesAroundWords(searchText);
+            }
+            finally
+            {
+                isAutoOcrRedrawPass = false;
+            }
+        }
+    }
+
+    private void ContentChangeTimer_Tick(object? sender, EventArgs e)
+    {
+        // Only an unfrozen frame shows live screen content worth watching.
+        if (!IsLoaded
+            || IsFreezeMode
+            || hasLoadedImageSource
+            || isStaticImageSource
+            || IsPdfDocumentLoaded
+            || WindowState == WindowState.Minimized)
+        {
+            contentChangeDetector.Reset();
+            return;
+        }
+
+        // Skip while the user or the OCR pipeline is mid-operation; a capture
+        // taken now would make an unstable baseline. Open context menus,
+        // dropdowns, and tooltips render over the captured region, so they
+        // would register as a content change and wrongly trigger a refresh.
+        if (AutoOcrCheckBox.IsChecked is not true
+            || isDrawing
+            || reDrawTimer.IsEnabled
+            || isSelecting
+            || IsEditingAnyWordBorders
+            || movingWordBordersDictionary.Count > 0
+            || Mouse.Captured is not null
+            || IsAnyPopupOpen()
+            || CheckKey(VirtualKeyCodes.LeftButton)
+            || CheckKey(VirtualKeyCodes.MiddleButton))
+        {
+            return;
+        }
+
+        System.Drawing.Rectangle contentRect = GetContentAreaScreenRect();
+        if (contentRect.Width <= 1 || contentRect.Height <= 1)
+            return;
+
+        using System.Drawing.Bitmap capture = ImageMethods.GetRegionOfScreenAsBitmap(contentRect, cacheResult: false);
+
+        if (!contentChangeDetector.CheckForChangeAndUpdate(capture))
+            return;
+
+        // The screen behind the frame changed; clear stale results and let the
+        // redraw timer re-capture and re-OCR (same path as moving the window).
+        // Reset the detector so the freshly drawn word borders become the next
+        // baseline instead of immediately re-triggering another refresh.
+        contentChangeDetector.Reset();
+        ResetGrabFrame();
+        reDrawTimer.Stop();
+        reDrawTimer.Start();
+    }
+
+    /// <summary>
+    /// Returns true when any WPF popup is showing on this thread — context
+    /// menus, combo box dropdowns, submenus, and tooltips are all hosted in
+    /// a visible PopupRoot presentation source.
+    /// </summary>
+    private static bool IsAnyPopupOpen()
+    {
+        foreach (PresentationSource source in PresentationSource.CurrentSources)
+        {
+            if (source.RootVisual is UIElement { IsVisible: true } rootElement
+                && rootElement.GetType().Name == "PopupRoot")
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async void RefreshBTN_Click(object? sender = null, RoutedEventArgs? e = null)
@@ -3620,12 +3756,12 @@ public partial class GrabFrame : Window
         UndoRedo.StartTransaction();
 
         UndoRedo.InsertUndoRedoOperation(UndoRedoOperation.RemoveWordBorder,
-new GrabFrameOperationArgs()
-{
-    RemovingWordBorders = [.. wordBorders],
-    WordBorders = wordBorders,
-    GrabFrameCanvas = RectanglesCanvas
-});
+        new GrabFrameOperationArgs()
+        {
+            RemovingWordBorders = [.. wordBorders],
+            WordBorders = wordBorders,
+            GrabFrameCanvas = RectanglesCanvas
+        });
 
         if (hasLoadedImageSource || IsFreezeMode)
         {
@@ -3646,6 +3782,7 @@ new GrabFrameOperationArgs()
 
             await Task.Delay(200);
 
+            DisposePreviousFrameContent();
             frameContentImageSource = ImageMethods.GetWindowBoundsImage(this);
             GrabFrameImage.Source = frameContentImageSource;
         }
@@ -4536,6 +4673,7 @@ new GrabFrameOperationArgs()
         ResetGrabFrame();
         Topmost = true;
         GrabFrameImage.Opacity = 0;
+        DisposePreviousFrameContent();
         frameContentImageSource = null;
         historyItem = null;
         RectanglesBorder.Background.Opacity = overlayOpacity;
@@ -4620,6 +4758,12 @@ new GrabFrameOperationArgs()
 
     private void UpdateFrameText(bool preserveLinkedSpreadsheetSelection = false)
     {
+        // Nearly every overlay mutation (selection, edits, merges, moves,
+        // deletes, table changes) funnels through here, and each repaints the
+        // word borders; rebase the change detector so those repaints are not
+        // judged as screen-content changes.
+        contentChangeDetector.Reset();
+
         StringBuilder stringBuilder = new();
         List<(double Top, double Left, double Height, string Text, bool AllowParagraphJoin)> selectedLines =
             [.. wordBorders
@@ -5100,7 +5244,9 @@ new GrabFrameOperationArgs()
             return;
         }
 
-        frameContentImageSource = MagickHelpers.Invert(frameContentImageSource);
+        ImageSource? invertedSource = MagickHelpers.Invert(frameContentImageSource);
+        DisposePreviousFrameContent();
+        frameContentImageSource = invertedSource;
         GrabFrameImage.Source = frameContentImageSource;
 
         args.NewImage = frameContentImageSource;
@@ -5148,7 +5294,9 @@ new GrabFrameOperationArgs()
             return;
         }
 
-        frameContentImageSource = MagickHelpers.Contrast(frameContentImageSource);
+        ImageSource? contrastedSource = MagickHelpers.Contrast(frameContentImageSource);
+        DisposePreviousFrameContent();
+        frameContentImageSource = contrastedSource;
         GrabFrameImage.Source = frameContentImageSource;
 
         args.NewImage = frameContentImageSource;
@@ -5196,7 +5344,9 @@ new GrabFrameOperationArgs()
             return;
         }
 
-        frameContentImageSource = MagickHelpers.Brighten(frameContentImageSource);
+        ImageSource? brightenedSource = MagickHelpers.Brighten(frameContentImageSource);
+        DisposePreviousFrameContent();
+        frameContentImageSource = brightenedSource;
         GrabFrameImage.Source = frameContentImageSource;
 
         args.NewImage = frameContentImageSource;
@@ -5244,7 +5394,9 @@ new GrabFrameOperationArgs()
             return;
         }
 
-        frameContentImageSource = MagickHelpers.Darken(frameContentImageSource);
+        ImageSource? darkenedSource = MagickHelpers.Darken(frameContentImageSource);
+        DisposePreviousFrameContent();
+        frameContentImageSource = darkenedSource;
         GrabFrameImage.Source = frameContentImageSource;
 
         args.NewImage = frameContentImageSource;
@@ -5292,7 +5444,9 @@ new GrabFrameOperationArgs()
             return;
         }
 
-        frameContentImageSource = MagickHelpers.Grayscale(frameContentImageSource as BitmapSource);
+        ImageSource? grayscaledSource = MagickHelpers.Grayscale(frameContentImageSource as BitmapSource);
+        DisposePreviousFrameContent();
+        frameContentImageSource = grayscaledSource;
         GrabFrameImage.Source = frameContentImageSource;
 
         args.NewImage = frameContentImageSource;
