@@ -1,4 +1,3 @@
-using System.Globalization;
 using Text_Grab.Services;
 
 namespace Tests;
@@ -40,6 +39,7 @@ public class UnitConversionTests
     [InlineData("100 F to C", 37.778, 0.01)]
     [InlineData("0 C to F", 32, 0.01)]
     [InlineData("1 foot to inches", 12, 0.01)]
+    [InlineData("0.876 ft to in", 10.512, 0.1)]
     [InlineData("1 mile to feet", 5280, 1)]
     [InlineData("1 gallon to liters", 3.785, 0.01)]
     [InlineData("1 kg to grams", 1000, 0.01)]
@@ -139,6 +139,82 @@ public class UnitConversionTests
     }
 
     #endregion Explicit Conversion Tests
+
+    #region Feet and Inches Tests
+
+    [Theory]
+    [InlineData("1.9 meters to feet", "6 ft 3 in")]
+    [InlineData("1 meter to feet", "3 ft 3 in")]
+    [InlineData("6 feet to feet", "6 ft")]
+    [InlineData("12 inches to feet", "1 ft")]
+    [InlineData("1 mile to feet", "5280 ft")]
+    public async Task ConversionToFeet_FormatsAsFeetAndInches(string input, string expectedOutput)
+    {
+        CalculationResult result = await _service.EvaluateExpressionsAsync(input);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Equal(expectedOutput, result.Output);
+    }
+
+    [Fact]
+    public async Task ConversionToFeet_StillTracksNumericValue()
+    {
+        // OutputNumbers should still contain the fractional feet value
+        CalculationResult result = await _service.EvaluateExpressionsAsync("1.9 meters to feet");
+
+        Assert.Single(result.OutputNumbers);
+        Assert.InRange(result.OutputNumbers[0], 6.23, 6.24);
+    }
+
+    [Fact]
+    public async Task ContinuationConversionToFeet_FormatsAsFeetAndInches()
+    {
+        string input = "1.9 meters\nto feet";
+        CalculationResult result = await _service.EvaluateExpressionsAsync(input);
+
+        Assert.Equal(0, result.ErrorCount);
+        string[] lines = result.Output.Split('\n');
+        Assert.Equal(2, lines.Length);
+        Assert.Contains("6 ft", lines[1]);
+        Assert.Contains("in", lines[1]);
+    }
+
+    #endregion Feet and Inches Tests
+
+    #region Decimal Parsing Tests
+
+    /// <summary>
+    /// Regression: a 3-digit decimal like 0.345 was incorrectly stripped of its dot
+    /// (treated as a European thousands separator like "1.000") and parsed as 345.
+    /// The fix: only strip the dot when the integer part doesn't start with 0.
+    /// </summary>
+    [Theory]
+    [InlineData("0.345 meters to cm", 34.5, 0.01)]
+    [InlineData("0.100 km to meters", 100, 0.1)]
+    [InlineData("0.500 kg to grams", 500, 0.1)]
+    [InlineData("0.125 miles to km", 0.2012, 0.01)]
+    public async Task DecimalWithThreeDigits_ParsedCorrectly(string input, double expectedValue, double tolerance)
+    {
+        CalculationResult result = await _service.EvaluateExpressionsAsync(input);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Single(result.OutputNumbers);
+        Assert.InRange(result.OutputNumbers[0], expectedValue - tolerance, expectedValue + tolerance);
+    }
+
+    [Theory]
+    [InlineData("1.000 km to meters", 1000000, 1)]   // "1.000" → thousands sep → 1000 km → 1,000,000 m
+    [InlineData("2.000 meters to cm", 200000, 1)]     // "2.000" → thousands sep → 2000 m → 200,000 cm
+    public async Task DecimalVsThousandsSeparator_CorrectBehavior(string input, double expectedValue, double tolerance)
+    {
+        CalculationResult result = await _service.EvaluateExpressionsAsync(input);
+
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Single(result.OutputNumbers);
+        Assert.InRange(result.OutputNumbers[0], expectedValue - tolerance, expectedValue + tolerance);
+    }
+
+    #endregion Decimal Parsing Tests
 
     #region Continuation Conversion Tests
 
@@ -474,7 +550,7 @@ public class UnitConversionTests
     [Fact]
     public void TryEvaluateUnitConversion_ContinuationWithPrevious_ReturnsTrue()
     {
-        var previous = new CalculationService.UnitResult
+        CalculationService.UnitResult previous = new()
         {
             Value = 5,
             Unit = UnitsNet.Units.LengthUnit.Mile,
