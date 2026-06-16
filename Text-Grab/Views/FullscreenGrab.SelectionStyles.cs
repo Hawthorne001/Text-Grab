@@ -1032,8 +1032,15 @@ public partial class FullscreenGrab
 
         // Show a loading indicator over the grabbed region while OCR and any
         // post-grab actions run, then flash a success icon once text is handled.
-        PreviousGrabWindow grabIndicator = new(GetHistoryPositionRect(selection), PreviousGrabIndicator.Loading);
-        grabIndicator.Show();
+        // Direct Text (UI Automation) reads the live screen, so a Topmost window
+        // over the region would occlude the read and return no text — skip it.
+        ILanguage selectedLanguage = LanguagesComboBox.SelectedItem as ILanguage ?? LanguageUtilities.GetOCRLanguage();
+        PreviousGrabWindow? grabIndicator = null;
+        if (selectedLanguage is not UiAutomationLang)
+        {
+            grabIndicator = new(GetHistoryPositionRect(selection), PreviousGrabIndicator.Loading);
+            grabIndicator.Show();
+        }
 
         bool grabbedText = false;
         try
@@ -1043,9 +1050,9 @@ public partial class FullscreenGrab
         finally
         {
             if (grabbedText)
-                grabIndicator.ShowSuccess();
+                grabIndicator?.ShowSuccess();
             else
-                grabIndicator.Close();
+                grabIndicator?.Close();
         }
     }
 
