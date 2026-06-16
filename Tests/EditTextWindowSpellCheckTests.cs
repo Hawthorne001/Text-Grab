@@ -77,4 +77,32 @@ public class EditTextWindowSpellCheckTests
                       "hash=1234567890abcdef1234567890abcdef12";
         Assert.False(EditTextWindow.ShouldEnableSpellCheck(text));
     }
+
+    [Fact]
+    public void AlwaysOnMode_EnabledEvenForContentAutoWouldReject()
+    {
+        // Content Auto mode would disable (3+ long tokens), but Always On forces it on
+        string text = "Microsoft.Windows.AppManifest.Version1234 " +
+                      "com.example.application.package.name.v2 " +
+                      "SomeGuidLike_1234567890abcdef1234";
+        Assert.False(EditTextWindow.ShouldEnableSpellCheck(SpellCheckMode.Auto, text));
+        Assert.True(EditTextWindow.ShouldEnableSpellCheck(SpellCheckMode.AlwaysOn, text));
+    }
+
+    [Fact]
+    public void OffMode_DisabledEvenForNormalText()
+    {
+        string text = "The quick brown fox jumps over the lazy dog.";
+        Assert.True(EditTextWindow.ShouldEnableSpellCheck(SpellCheckMode.Auto, text));
+        Assert.False(EditTextWindow.ShouldEnableSpellCheck(SpellCheckMode.Off, text));
+    }
+
+    [Fact]
+    public void AutoMode_MatchesContentHeuristic()
+    {
+        string normal = "The quick brown fox.";
+        string longTokens = new string('a', 10_001);
+        Assert.True(EditTextWindow.ShouldEnableSpellCheck(SpellCheckMode.Auto, normal));
+        Assert.False(EditTextWindow.ShouldEnableSpellCheck(SpellCheckMode.Auto, longTokens));
+    }
 }

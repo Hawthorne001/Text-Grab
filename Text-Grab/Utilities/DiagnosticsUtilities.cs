@@ -211,6 +211,7 @@ public static class DiagnosticsUtilities
             EditWindowStartFullscreen = s.EditWindowStartFullscreen,
             RestoreEtwPositions = s.RestoreEtwPositions,
             EtwUseMargins = s.EtwUseMargins,
+            EtwSpellCheckMode = s.EtwSpellCheckMode ?? string.Empty,
             ShowCursorText = s.ShowCursorText,
             ScrollBottomBar = s.ScrollBottomBar,
             EtwShowLangPicker = s.EtwShowLangPicker,
@@ -560,6 +561,7 @@ public class SettingsInfoModel
     public bool EditWindowStartFullscreen { get; set; }
     public bool RestoreEtwPositions { get; set; }
     public bool EtwUseMargins { get; set; }
+    public string EtwSpellCheckMode { get; set; } = string.Empty;
     public bool ShowCursorText { get; set; }
     public bool ScrollBottomBar { get; set; }
     public bool EtwShowLangPicker { get; set; }

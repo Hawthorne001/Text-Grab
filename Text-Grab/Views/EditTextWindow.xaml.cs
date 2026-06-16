@@ -102,6 +102,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
     private readonly List<DataGridColumn> trackedSpreadsheetColumns = [];
     private List<(int RowIndex, int ColumnIndex)> selectedSpreadsheetCellCoordinates = [];
     private EtwEditorMode editorMode = EtwEditorMode.Text;
+    private SpellCheckMode spellCheckMode = SpellCheckMode.Auto;
     private bool isSyncingTextFromSpreadsheet = false;
     private bool isSyncingTextFromMarkdown = false;
     private bool isApplyingSpreadsheetLayout = false;
@@ -3773,6 +3774,62 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         return true;
     }
 
+    /// <summary>
+    /// Resolves whether spell check should be active for the given mode and text.
+    /// Always On / Off force the state; Auto defers to <see cref="ShouldEnableSpellCheck(string)"/>.
+    /// </summary>
+    internal static bool ShouldEnableSpellCheck(SpellCheckMode mode, string text) => mode switch
+    {
+        SpellCheckMode.AlwaysOn => true,
+        SpellCheckMode.Off => false,
+        _ => ShouldEnableSpellCheck(text),
+    };
+
+    /// <summary>
+    /// Applies the current <see cref="spellCheckMode"/> to the editors. In Auto mode the
+    /// content is re-evaluated (the scan is O(n) but short-circuits early, so it stays fast
+    /// even for large pastes); Always On / Off force the state regardless of content.
+    /// </summary>
+    private void ApplySpellCheckMode()
+    {
+        bool shouldSpellCheck = ShouldEnableSpellCheck(spellCheckMode, PassedTextControl.Text);
+
+        if (SpellCheck.GetIsEnabled(PassedTextControl) != shouldSpellCheck)
+            SpellCheck.SetIsEnabled(PassedTextControl, shouldSpellCheck);
+
+        if (SpellCheck.GetIsEnabled(MarkdownEditorControl) != shouldSpellCheck)
+            SpellCheck.SetIsEnabled(MarkdownEditorControl, shouldSpellCheck);
+    }
+
+    private void SetSpellCheckMode(SpellCheckMode mode)
+    {
+        spellCheckMode = mode;
+        SetSpellCheckMenuItems();
+        ApplySpellCheckMode();
+    }
+
+    private void SetSpellCheckMenuItems()
+    {
+        SpellCheckAutoMenuItem.IsChecked = spellCheckMode == SpellCheckMode.Auto;
+        SpellCheckAlwaysOnMenuItem.IsChecked = spellCheckMode == SpellCheckMode.AlwaysOn;
+        SpellCheckOffMenuItem.IsChecked = spellCheckMode == SpellCheckMode.Off;
+    }
+
+    private void SpellCheckModeMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem menuItem
+            || !Enum.TryParse(menuItem.Tag?.ToString(), out SpellCheckMode mode))
+        {
+            // Re-sync the check marks so a stray click can't leave the menu inconsistent.
+            SetSpellCheckMenuItems();
+            return;
+        }
+
+        SetSpellCheckMode(mode);
+        DefaultSettings.EtwSpellCheckMode = mode.ToString();
+        DefaultSettings.Save();
+    }
+
     private void PassedTextControl_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (DefaultSettings.EditWindowStartFullscreen && prevWindowState is not null)
@@ -3781,11 +3838,7 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             prevWindowState = null;
         }
 
-        // Re-evaluate spell check eligibility on every change (the scan is O(n) but
-        // short-circuits early, so it stays fast even for large pastes).
-        bool shouldSpellCheck = ShouldEnableSpellCheck(PassedTextControl.Text);
-        if (SpellCheck.GetIsEnabled(PassedTextControl) != shouldSpellCheck)
-            SpellCheck.SetIsEnabled(PassedTextControl, shouldSpellCheck);
+        ApplySpellCheckMode();
 
         UpdateLineAndColumnText();
 
@@ -4251,6 +4304,10 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
             MarginsMenuItem.IsChecked = true;
             SetMargins(true);
         }
+
+        if (!Enum.TryParse(DefaultSettings.EtwSpellCheckMode, out SpellCheckMode savedSpellCheckMode))
+            savedSpellCheckMode = SpellCheckMode.Auto;
+        SetSpellCheckMode(savedSpellCheckMode);
 
         SetBottomBarButtons();
     }
@@ -5290,6 +5347,11 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
 
     private void Window_Activated(object sender, EventArgs e)
     {
+        // Pick up a spell-check mode changed from the settings page while this window was open.
+        if (Enum.TryParse(DefaultSettings.EtwSpellCheckMode, out SpellCheckMode settingsMode)
+            && settingsMode != spellCheckMode)
+            SetSpellCheckMode(settingsMode);
+
         if (editorMode == EtwEditorMode.Spreadsheet)
             SpreadsheetDataGrid.Focus();
         else if (editorMode == EtwEditorMode.Markdown)

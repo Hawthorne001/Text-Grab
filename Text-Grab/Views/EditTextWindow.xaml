@@ -514,6 +514,27 @@
                         x:Name="FontMenuItem"
                         Click="FontMenuItem_Click"
                         Header="_Font..." />
+                    <Separator />
+                    <MenuItem x:Name="SpellCheckMenuItem" Header="Spell _Check">
+                        <MenuItem
+                            x:Name="SpellCheckAutoMenuItem"
+                            Click="SpellCheckModeMenuItem_Click"
+                            Header="_Auto"
+                            IsCheckable="True"
+                            Tag="Auto" />
+                        <MenuItem
+                            x:Name="SpellCheckAlwaysOnMenuItem"
+                            Click="SpellCheckModeMenuItem_Click"
+                            Header="Always _On"
+                            IsCheckable="True"
+                            Tag="AlwaysOn" />
+                        <MenuItem
+                            x:Name="SpellCheckOffMenuItem"
+                            Click="SpellCheckModeMenuItem_Click"
+                            Header="O_ff"
+                            IsCheckable="True"
+                            Tag="Off" />
+                    </MenuItem>
                 </MenuItem>
                 <MenuItem
                     x:Name="CaptureMenuItem"
