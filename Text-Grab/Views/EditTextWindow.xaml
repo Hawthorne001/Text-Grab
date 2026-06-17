@@ -240,7 +240,7 @@
                         Header="Close"
                         InputGestureText="Alt + F4" />
                 </MenuItem>
-                <MenuItem Header="_Edit">
+                <MenuItem Header="_Edit" SubmenuOpened="EditMenuItem_SubmenuOpened">
                     <MenuItem Command="ApplicationCommands.Undo" />
                     <MenuItem Command="ApplicationCommands.Redo" />
                     <Separator />
@@ -312,6 +312,14 @@
                         Click="AddRemoveAtMenuItem_Click"
                         Header="_Add, Remove, Limit..." />
                     <MenuItem Command="{x:Static local:EditTextWindow.TransposeTableCmd}" Header="_Transpose Table" />
+                    <MenuItem
+                        x:Name="ApplyGrabTemplateMenuItem"
+                        Header="Apply Grab Template"
+                        Visibility="Collapsed" />
+                    <MenuItem
+                        x:Name="ApplyGrabTemplatePerLineMenuItem"
+                        Header="Apply Grab Template Per Line"
+                        Visibility="Collapsed" />
                     <Separator />
                     <MenuItem
                         x:Name="AddSpreadsheetRowMenuItem"

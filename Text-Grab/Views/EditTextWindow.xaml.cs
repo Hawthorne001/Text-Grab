@@ -2890,6 +2890,76 @@ public partial class EditTextWindow : Wpf.Ui.Controls.FluentWindow
         ReplaceSelectedTextOrAllText(updatedText);
     }
 
+    private void EditMenuItem_SubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        // Load text-only templates fresh each time the Edit menu opens and use them to
+        // populate both the whole-text and per-line apply submenus.
+        List<GrabTemplate> textOnlyTemplates = [.. GrabTemplateManager.GetAllTemplates().Where(template => template.IsTextOnly && template.IsValid)];
+
+        PopulateTemplateMenu(ApplyGrabTemplateMenuItem, textOnlyTemplates, ApplyGrabTemplateItem_Click);
+        PopulateTemplateMenu(ApplyGrabTemplatePerLineMenuItem, textOnlyTemplates, ApplyGrabTemplatePerLineItem_Click);
+    }
+
+    private static void PopulateTemplateMenu(MenuItem parent, List<GrabTemplate> templates, RoutedEventHandler clickHandler)
+    {
+        parent.Items.Clear();
+
+        if (templates.Count == 0)
+        {
+            parent.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        foreach (GrabTemplate template in templates)
+        {
+            MenuItem templateItem = new()
+            {
+                Header = template.Name,
+                ToolTip = string.IsNullOrWhiteSpace(template.Description) ? null : template.Description,
+                Tag = template,
+            };
+            templateItem.Click += clickHandler;
+            parent.Items.Add(templateItem);
+        }
+
+        parent.Visibility = Visibility.Visible;
+    }
+
+    private void ApplyGrabTemplateItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: GrabTemplate template })
+            return;
+
+        ApplySelectedTextOrAllTextTransform(text => GrabTemplateExecutor.ApplyTextOnlyTemplate(template, text));
+        GrabTemplateManager.RecordUsage(template.Id);
+    }
+
+    private void ApplyGrabTemplatePerLineItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: GrabTemplate template })
+            return;
+
+        ApplySelectedTextOrAllTextTransform(text => ApplyTemplatePerLine(template, text));
+        GrabTemplateManager.RecordUsage(template.Id);
+    }
+
+    /// <summary>
+    /// Splits <paramref name="text"/> into lines and applies the text-only template to each
+    /// non-blank line independently, preserving blank lines and the overall line structure.
+    /// </summary>
+    private static string ApplyTemplatePerLine(GrabTemplate template, string text)
+    {
+        string[] lines = text.Split(Environment.NewLine);
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(lines[i]))
+                lines[i] = GrabTemplateExecutor.ApplyTextOnlyTemplate(template, lines[i]);
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
     private void GrabFrameMenuItem_Click(object sender, RoutedEventArgs e)
     {
         CheckForGrabFrameOrLaunch();
