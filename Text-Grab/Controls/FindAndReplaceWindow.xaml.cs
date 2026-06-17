@@ -595,6 +595,109 @@ public partial class FindAndReplaceWindow : FluentWindow
         ResetWindowLoading();
     }
 
+    private void ApplyTemplateButton_Click(object sender, RoutedEventArgs e)
+    {
+        System.Windows.Controls.ContextMenu menu = new()
+        {
+            PlacementTarget = ApplyTemplateButton,
+            Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+        };
+
+        if (IsSpreadsheetSearch)
+        {
+            menu.Items.Add(DisabledMenuItem("Not available in spreadsheet mode"));
+            menu.IsOpen = true;
+            return;
+        }
+
+        // Load text-only templates fresh each time, mirroring the Edit Text Window menu.
+        List<GrabTemplate> textOnlyTemplates = GrabTemplateManager.GetAllTemplates()
+            .Where(template => template.IsTextOnly && template.IsValid)
+            .ToList();
+
+        if (textOnlyTemplates.Count == 0)
+        {
+            menu.Items.Add(DisabledMenuItem("No text-only templates found"));
+            menu.IsOpen = true;
+            return;
+        }
+
+        bool hasMatches = Matches is not null && Matches.Count > 0;
+
+        foreach (GrabTemplate template in textOnlyTemplates)
+        {
+            System.Windows.Controls.MenuItem item = new()
+            {
+                Header = template.Name,
+                ToolTip = string.IsNullOrWhiteSpace(template.Description) ? null : template.Description,
+                Tag = template,
+                IsEnabled = hasMatches,
+            };
+            item.Click += TemplateMenuItem_Click;
+            menu.Items.Add(item);
+        }
+
+        if (!hasMatches)
+            menu.Items.Add(DisabledMenuItem("Run a search to find matches first"));
+
+        menu.IsOpen = true;
+    }
+
+    private static System.Windows.Controls.MenuItem DisabledMenuItem(string text) =>
+        new() { Header = text, IsEnabled = false };
+
+    private void TemplateMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.MenuItem { Tag: GrabTemplate template })
+            _ = ApplyTemplateToMatchesAsync(template);
+    }
+
+    /// <summary>
+    /// Applies a text-only Grab Template to every matched result, replacing each match
+    /// with the template output evaluated against that match's own text. When two or
+    /// more results are selected, only those are affected; otherwise all matches are.
+    /// </summary>
+    private async Task ApplyTemplateToMatchesAsync(GrabTemplate template)
+    {
+        if (textEditWindow is null || IsSpreadsheetSearch)
+            return;
+
+        if (Matches is null || Matches.Count < 1)
+            return;
+
+        SetWindowToLoading();
+
+        string originalText = textEditWindow.PassedTextControl.Text;
+        StringBuilder stringBuilder = new(originalText);
+
+        IList selection = ResultsListView.SelectedItems;
+        List<FindResult> targets = selection.Count >= 2
+            ? [.. selection.Cast<FindResult>()]
+            : [.. ResultsListView.Items.Cast<FindResult>()];
+
+        await Task.Run(() =>
+        {
+            // Apply from the end backwards so earlier indices stay valid as we edit.
+            foreach (FindResult result in targets.OrderByDescending(r => r.Index))
+            {
+                if (result.Index < 0 || result.Index + result.Length > originalText.Length)
+                    continue;
+
+                string matchText = originalText.Substring(result.Index, result.Length);
+                string replacement = GrabTemplateExecutor.ApplyTextOnlyTemplate(template, matchText);
+
+                stringBuilder.Remove(result.Index, result.Length);
+                stringBuilder.Insert(result.Index, replacement);
+            }
+        });
+
+        textEditWindow.PassedTextControl.Text = stringBuilder.ToString();
+        GrabTemplateManager.RecordUsage(template.Id);
+
+        SearchForText();
+        ResetWindowLoading();
+    }
+
     private void ResetWindowLoading()
     {
         MainContentGrid.IsEnabled = true;
