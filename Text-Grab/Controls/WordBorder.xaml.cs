@@ -92,7 +92,14 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
     {
         InitializeComponent();
         DataContext = this;
-        contextMenuBaseSize = WordBorderBorder.ContextMenu.Items.Count;
+
+        // An empty placeholder keeps ContextMenuOpening firing; the items are
+        // built on first open in EnsureContextMenuItems so the many
+        // WordBorders rendered per OCR pass don't each allocate a menu tree.
+        ContextMenu lazyContextMenu = new();
+        WordBorderBorder.ContextMenu = lazyContextMenu;
+        EditWordTextBox.ContextMenu = lazyContextMenu;
+
         Loaded += WordBorder_Loaded;
         SizeChanged += WordBorder_SizeChanged;
 
@@ -371,12 +378,62 @@ public partial class WordBorder : UserControl, INotifyPropertyChanged
         OwnerGrabFrame?.DeleteThisWordBorder(this);
     }
 
-    private void EditWordTextBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    private MenuItem NewContextMenuItem(string header, RoutedEventHandler clickHandler)
     {
-        if (sender is not FrameworkElement senderElement)
+        MenuItem menuItem = new()
+        {
+            Header = header,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        menuItem.Click += clickHandler;
+        return menuItem;
+    }
+
+    private void EnsureContextMenuItems(ContextMenu contextMenu)
+    {
+        if (contextMenu.Items.Count > 0)
             return;
 
-        ContextMenu textBoxContextMenu = senderElement.ContextMenu;
+        contextMenu.Items.Add(NewContextMenuItem("Copy Text", CopyWordMenuItem_Click));
+        contextMenu.Items.Add(NewContextMenuItem("Try To Make _Numbers", TryToNumberMenuItem_Click));
+        contextMenu.Items.Add(NewContextMenuItem("Try To Make _Letters", TryToAlphaMenuItem_Click));
+        contextMenu.Items.Add(NewContextMenuItem("Make Text _Single Line", MakeSingleLineMenuItem_Click));
+        contextMenu.Items.Add(new Separator());
+
+        MenuItem translateMenuItem = NewContextMenuItem("Translate to System Language", TranslateWordMenuItem_Click);
+        translateMenuItem.Name = "TranslateWordMenuItem";
+        translateMenuItem.Visibility = Visibility.Collapsed;
+        contextMenu.Items.Add(translateMenuItem);
+        contextMenu.Items.Add(new Separator()
+        {
+            Name = "TranslateSeparator",
+            Visibility = Visibility.Collapsed
+        });
+
+        contextMenu.Items.Add(new MenuItem()
+        {
+            Header = "_Merge Selected Word Borders",
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Command = MergeWordsCommand,
+            InputGestureText = "Ctrl + M"
+        });
+        contextMenu.Items.Add(NewContextMenuItem("_Break into words", BreakIntoWordsMenuItem_Click));
+        contextMenu.Items.Add(NewContextMenuItem("_Search for similar text", SearchForSimilarMenuItem_Click));
+        contextMenu.Items.Add(new Separator());
+        contextMenu.Items.Add(NewContextMenuItem("_Delete", DeleteWordMenuItem_Click));
+
+        contextMenuBaseSize = contextMenu.Items.Count;
+    }
+
+    private void EditWordTextBox_ContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (sender is not FrameworkElement senderElement
+            || senderElement.ContextMenu is not ContextMenu textBoxContextMenu)
+        {
+            return;
+        }
+
+        EnsureContextMenuItems(textBoxContextMenu);
 
         while (textBoxContextMenu.Items.Count > contextMenuBaseSize)
         {

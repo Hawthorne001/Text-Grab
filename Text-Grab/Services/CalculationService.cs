@@ -412,7 +412,7 @@ public partial class CalculationService
         // Evaluate the expression to get the value
         expression = StandardizeDecimalAndGroupSeparators(expression);
         ExpressionOptions option = ExpressionOptions.IgnoreCaseAtBuiltInFunctions;
-        AsyncExpression expr = new(expression, option)
+        Expression expr = new(expression, option)
         {
             CultureInfo = CultureInfo ?? CultureInfo.CurrentCulture
         };
@@ -421,7 +421,7 @@ public partial class CalculationService
             throw new ArgumentException($"Expression for '{variableName}' is empty.");
 
         // Set up parameter handler for existing parameters
-        expr.EvaluateParameterAsync += (name, args) =>
+        expr.EvaluateParameter += (name, args) =>
         {
             if (_parameters.ContainsKey(name))
             {
@@ -435,7 +435,6 @@ public partial class CalculationService
             {
                 args.Result = null; // Default to null if parameter not found
             }
-            return ValueTask.CompletedTask;
         };
 
         // Register custom functions
@@ -465,13 +464,13 @@ public partial class CalculationService
 
         ExpressionOptions option = ExpressionOptions.IgnoreCaseAtBuiltInFunctions;
         line = StandardizeDecimalAndGroupSeparators(line);
-        AsyncExpression expression = new(line, option)
+        Expression expression = new(line, option)
         {
             CultureInfo = CultureInfo ?? CultureInfo.CurrentCulture,
         };
 
         // Set up parameter handler
-        expression.EvaluateParameterAsync += (name, args) =>
+        expression.EvaluateParameter += (name, args) =>
         {
             if (_parameters.ContainsKey(name))
             {
@@ -481,7 +480,6 @@ public partial class CalculationService
             {
                 args.Result = constantValue;
             }
-            return ValueTask.CompletedTask;
         };
 
         // Register custom functions
@@ -590,23 +588,23 @@ public partial class CalculationService
     /// <summary>
     /// Registers custom functions for the expression evaluator.
     /// </summary>
-    private static void RegisterCustomFunctions(AsyncExpression expression)
+    private static void RegisterCustomFunctions(Expression expression)
     {
         // Register Sum function
-        expression.EvaluateFunctionAsync += async (name, args) =>
+        expression.EvaluateAsyncFunction += async (name, args) =>
         {
             if (name.Equals("Sum", StringComparison.OrdinalIgnoreCase))
             {
-                if (args.Parameters.Length == 0)
+                if (args.Parameters.Count == 0)
                 {
                     args.Result = 0;
                     return;
                 }
 
                 decimal sum = 0m;
-                foreach (AsyncExpression parameter in args.Parameters)
+                for (int i = 0; i < args.Parameters.Count; i++)
                 {
-                    object? value = await parameter.EvaluateAsync();
+                    object? value = await args.Parameters.EvaluateAsync(i);
 
                     // Handle different numeric types
                     if (value is null)

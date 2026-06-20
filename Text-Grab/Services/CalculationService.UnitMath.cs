@@ -308,7 +308,9 @@ public partial class CalculationService
             QuantityName = target.QuantityName,
             Abbreviation = target.Abbreviation
         };
-        result = FormatUnitValue(convertedValue, target.Abbreviation);
+        result = target.Unit is LengthUnit.Foot
+            ? FormatFeetAndInches(convertedValue)
+            : FormatUnitValue(convertedValue, target.Abbreviation);
         return true;
     }
 
@@ -450,7 +452,9 @@ public partial class CalculationService
             QuantityName = targetUnit.QuantityName,
             Abbreviation = targetUnit.Abbreviation
         };
-        result = FormatUnitValue(convertedValue, targetUnit.Abbreviation);
+        result = targetUnit.Unit is LengthUnit.Foot
+            ? FormatFeetAndInches(convertedValue)
+            : FormatUnitValue(convertedValue, targetUnit.Abbreviation);
         return true;
     }
 
@@ -697,6 +701,30 @@ public partial class CalculationService
     {
         string formatted = FormatResult(value);
         return $"{formatted} {abbreviation}";
+    }
+
+    /// <summary>
+    /// Formats a fractional feet value as a human-readable "X ft Y in" string.
+    /// For example, 6.2336 feet → "6 ft 3 in", 6.0 feet → "6 ft".
+    /// </summary>
+    private static string FormatFeetAndInches(double totalFeet)
+    {
+        bool negative = totalFeet < 0;
+        double absoluteFeet = Math.Abs(totalFeet);
+        int wholeFeet = (int)Math.Floor(absoluteFeet);
+        double remainingInches = (absoluteFeet - wholeFeet) * 12;
+        int wholeInches = (int)Math.Round(remainingInches);
+
+        if (wholeInches == 12)
+        {
+            wholeFeet++;
+            wholeInches = 0;
+        }
+
+        string sign = negative ? "-" : "";
+        return wholeInches == 0
+            ? $"{sign}{wholeFeet} ft"
+            : $"{sign}{wholeFeet} ft {wholeInches} in";
     }
 
     #endregion Unit Conversion Helpers

@@ -54,11 +54,11 @@
             Command="{x:Static local:GrabFrame.RedoCommand}"
             Executed="RedoExecuted" />
         <CommandBinding
-            CanExecute="CanExecuteMergeWordBorders"
+            CanExecute="CanChangeWordBorderExecute"
             Command="{x:Static local:GrabFrame.DeleteWordsCommand}"
             Executed="DeleteWordBordersExecuted" />
         <CommandBinding
-            CanExecute="CanChangeWordBorderExecute"
+            CanExecute="CanExecuteMergeWordBorders"
             Command="{x:Static local:GrabFrame.MergeWordsCommand}"
             Executed="MergeWordBordersExecuted" />
         <CommandBinding

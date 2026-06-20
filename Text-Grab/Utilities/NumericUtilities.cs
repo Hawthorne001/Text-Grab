@@ -7,11 +7,9 @@ using System.Text.RegularExpressions;
 
 namespace Text_Grab.Utilities;
 
-public static class NumericUtilities
+public static partial class NumericUtilities
 {
-    private static readonly Regex FirstNumericTokenRegex = new(
-        @"[-+]?(?:(?:\d[\d\s_,.]*)?\d)(?:[eE][-+]?\d+)?",
-        RegexOptions.Compiled);
+    private static readonly Regex FirstNumericTokenRegex = FirstNumericToken();
 
     public static double CalculateMedian(List<double> numbers)
     {
@@ -38,26 +36,26 @@ public static class NumericUtilities
         // Handle special floating-point values first
         if (double.IsNaN(value))
             return "NaN";
-        
+
         if (double.IsPositiveInfinity(value))
             return "∞";
-        
+
         if (double.IsNegativeInfinity(value))
             return "-∞";
-        
+
         double absValue = Math.Abs(value);
-        
+
         // Use scientific notation for very large or very small numbers
-        if (absValue >= 1e15 || (absValue < 1e-4 && absValue > 0))
+        if (absValue is >= 1e15 or < 1e-4 and > 0)
         {
             return value.ToString("E6", CultureInfo.CurrentCulture);
         }
-        
+
         // Check if value is "close enough" to an integer using epsilon comparison
         // Use a small tolerance to account for floating-point precision
         double fractionalPart = Math.Abs(value - Math.Round(value));
         bool isEffectivelyInteger = fractionalPart < 1e-10 && absValue < 1e10;
-        
+
         if (isEffectivelyInteger)
         {
             return Math.Round(value).ToString("N0", CultureInfo.CurrentCulture);
@@ -114,7 +112,7 @@ public static class NumericUtilities
         StringBuilder sb = new();
         foreach (char c in input.Trim())
         {
-            if (c != ' ' && c != '_')
+            if (c is not ' ' and not '_')
                 sb.Append(c);
         }
 
@@ -150,11 +148,17 @@ public static class NumericUtilities
             int lastDotIndex = compact.LastIndexOf('.');
             int digitsAfterDot = compact.Length - lastDotIndex - 1;
             bool hasMultipleDots = compact.Count(c => c == '.') > 1;
+            // A leading 0 before the dot (e.g. "0.345") means it can't be a thousands separator.
+            string beforeDot = compact[..lastDotIndex].TrimStart('-');
+            bool couldBeThousandsSep = beforeDot.Length > 0 && !beforeDot.StartsWith('0');
 
-            if (hasMultipleDots || digitsAfterDot == 3)
+            if (hasMultipleDots || (digitsAfterDot == 3 && couldBeThousandsSep))
                 compact = compact.Replace(".", string.Empty);
         }
 
         return compact;
     }
+
+    [GeneratedRegex(@"[-+]?(?:(?:\d[\d\s_,.]*)?\d)(?:[eE][-+]?\d+)?", RegexOptions.Compiled)]
+    private static partial Regex FirstNumericToken();
 }
