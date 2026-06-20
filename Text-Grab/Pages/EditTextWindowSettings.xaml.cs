@@ -51,6 +51,13 @@ public partial class EditTextWindowSettings : Page
 
         EtwNormalizeLineEndingsOnPasteCheckBox.IsChecked = DefaultSettings.EtwNormalizeLineEndingsOnPaste;
 
+        // Spell check
+        if (!Enum.TryParse(DefaultSettings.EtwSpellCheckMode, out SpellCheckMode spellCheckMode))
+            spellCheckMode = SpellCheckMode.Auto;
+        SpellCheckAutoRadio.IsChecked = spellCheckMode == SpellCheckMode.Auto;
+        SpellCheckAlwaysOnRadio.IsChecked = spellCheckMode == SpellCheckMode.AlwaysOn;
+        SpellCheckOffRadio.IsChecked = spellCheckMode == SpellCheckMode.Off;
+
         // Calculator
         CalcShowPaneCheckBox.IsChecked = DefaultSettings.CalcShowPane;
         CalcShowErrorsCheckBox.IsChecked = DefaultSettings.CalcShowErrors;
@@ -191,6 +198,18 @@ public partial class EditTextWindowSettings : Page
     {
         if (!_loaded) return;
         DefaultSettings.EtwNormalizeLineEndingsOnPaste = EtwNormalizeLineEndingsOnPasteCheckBox.IsChecked == true;
+        DefaultSettings.Save();
+    }
+
+    private void SpellCheckModeRadio_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_loaded
+            || sender is not RadioButton radioButton
+            || radioButton.IsChecked != true
+            || !Enum.TryParse(radioButton.Tag?.ToString(), out SpellCheckMode mode))
+            return;
+
+        DefaultSettings.EtwSpellCheckMode = mode.ToString();
         DefaultSettings.Save();
     }
 

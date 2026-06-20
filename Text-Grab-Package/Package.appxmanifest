@@ -14,7 +14,7 @@
   <Identity
     Name="40087JoeFinApps.TextGrab"
     Publisher="CN=153F3B0F-BA3D-4964-8098-71AC78A1DF6A"
-    Version="4.14.1.0" />
+    Version="4.14.2.0" />
 
   <Properties>
     <DisplayName>Text Grab</DisplayName>
@@ -95,6 +95,13 @@
 		  </uap2:SupportedVerbs>
 		</uap3:FileTypeAssociation>
 	  </uap3:Extension>
+
+	  <!-- text-grab:// protocol (used by the Text Grab browser extension) -->
+	  <uap:Extension Category="windows.protocol">
+		<uap:Protocol Name="text-grab">
+		  <uap:DisplayName>Text Grab</uap:DisplayName>
+		</uap:Protocol>
+	  </uap:Extension>
 
 	  <!-- Share target integration -->
 	  <uap:Extension Category="windows.shareTarget">

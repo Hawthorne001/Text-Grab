@@ -134,4 +134,34 @@ public class ClipboardUtilitiesTests
         Assert.Equal("Tall\tTop", lines[0]);
         Assert.Equal("Tall\tBottom", lines[1]);
     }
+
+    // The Text Grab browser extension's Table mode (including its layout
+    // reconstruction fallback for non-<table> grids) writes a clean
+    // <table><tr><td>…</td></tr></table> to the clipboard with <br> for
+    // newlines and &amp;-style entity escaping, then hands off via
+    // text-grab://paste-spreadsheet. This pins compatibility with that exact
+    // output (see Text-Grab-Extension/lib/formats.js -> toCleanHtmlTable).
+    private const string ExtensionRegionTableCfHtml = """
+        Version:0.9
+        StartHTML:00000097
+        EndHTML:00000260
+        StartFragment:00000131
+        EndFragment:00000224
+        <html><body>
+        <!--StartFragment--><table><tr><td>Product</td><td>Qty</td><td>Unit price</td></tr><tr><td>USB-C hub</td><td>12</td><td>$24.50</td></tr><tr><td>Monitor<br>arm</td><td>5</td><td>$130 &amp; up</td></tr></table><!--EndFragment-->
+        </body></html>
+        """;
+
+    [Fact]
+    public void ConvertHtmlToTabSeparated_ParsesBrowserExtensionRegionTable()
+    {
+        string result = ClipboardUtilities.ConvertHtmlToTabSeparated(ExtensionRegionTableCfHtml);
+
+        string[] lines = result.Split('\n');
+        Assert.Equal(3, lines.Length);
+        Assert.Equal("Product\tQty\tUnit price", lines[0]);
+        Assert.Equal("USB-C hub\t12\t$24.50", lines[1]);
+        // <br> collapses to a space; &amp; decodes to &.
+        Assert.Equal("Monitor arm\t5\t$130 & up", lines[2]);
+    }
 }

@@ -87,6 +87,17 @@ public enum ScrollBehavior
     ZoomWhenFrozen = 3,
 }
 
+public enum SpellCheckMode
+{
+    // Enable spell check unless the text looks like it would choke the checker
+    // (very long documents or several long unspaced tokens).
+    Auto = 0,
+    // Always show spell check, regardless of content.
+    AlwaysOn = 1,
+    // Never show spell check.
+    Off = 2,
+}
+
 public enum LanguageKind
 {
     Global = 0,
