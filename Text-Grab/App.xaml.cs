@@ -395,14 +395,20 @@ public partial class App : System.Windows.Application
                 }
             case "grab-frame":
                 {
-                    if (parameters.TryGetValue("path", out string? path)
-                        && File.Exists(path)
-                        && IoUtilities.IsVisualDocumentFile(path))
+                    // A path is optional. When present it is untrusted (the protocol can be
+                    // launched by any web page), so it must pass the safe-path gate before we
+                    // open the file; an unsafe path falls back to an empty Grab Frame.
+                    if (parameters.TryGetValue("path", out string? path))
                     {
-                        GrabFrame gfWithFile = new(path);
-                        gfWithFile.Show();
-                        gfWithFile.Activate();
-                        return true;
+                        if (ProtocolUtilities.TryGetSafeProtocolFilePath(path, out string safePath))
+                        {
+                            GrabFrame gfWithFile = new(safePath);
+                            gfWithFile.Show();
+                            gfWithFile.Activate();
+                            return true;
+                        }
+
+                        Debug.WriteLine("grab-frame protocol: rejected unsafe path; opening empty frame.");
                     }
 
                     GrabFrame gf = new();
@@ -412,14 +418,16 @@ public partial class App : System.Windows.Application
                 }
             case "grab-text":
                 {
-                    // OCR a local image/PDF straight to the clipboard, no window.
+                    // OCR a local image/PDF straight to the clipboard, no window. The path is
+                    // untrusted; only proceed for a validated, allowed local file.
                     if (parameters.TryGetValue("path", out string? path)
-                        && File.Exists(path)
-                        && IoUtilities.IsVisualDocumentFile(path))
+                        && ProtocolUtilities.TryGetSafeProtocolFilePath(path, out string safePath))
                     {
-                        _ = GrabTextFromFileAsync(path);
+                        _ = GrabTextFromFileAsync(safePath);
                         return true;
                     }
+
+                    Debug.WriteLine("grab-text protocol: missing or unsafe path; ignoring.");
                     return false;
                 }
             case "fullscreen":
