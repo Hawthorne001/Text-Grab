@@ -3729,6 +3729,10 @@ public partial class GrabFrame : Window
     {
         foreach (PresentationSource source in PresentationSource.CurrentSources)
         {
+            // PopupRoot is internal to WPF, so it can only be matched by type
+            // name; if a future framework version renames it this check silently
+            // stops detecting popups (the change detector would then run while a
+            // popup is open, at worst causing one spurious refresh).
             if (source.RootVisual is UIElement { IsVisible: true } rootElement
                 && rootElement.GetType().Name == "PopupRoot")
             {

@@ -315,7 +315,7 @@ public partial class CalculationService
     }
 
     /// <summary>
-    /// Handles "+
+    /// Handles "+ 3 km" or "- 5 miles" operator continuation with units.
     /// Converts the operand to the previous unit before adding/subtracting.
     /// </summary>
     private bool TryOperatorWithUnit(
@@ -459,7 +459,7 @@ public partial class CalculationService
     }
 
     /// <summary>
-    /// Handles standalone unit expressions
+    /// Handles standalone unit expressions like "5 meters" — tracks the unit for future
     /// continuation but does not convert. Requires multi-character unit abbreviations
     /// to avoid conflicts with single-letter variable names and quantity words.
     /// </summary>
